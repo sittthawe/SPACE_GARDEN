@@ -1,0 +1,590 @@
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+
+const PUBLIC_DIR = path.join(__dirname, "public");
+const STORAGE_ROOT = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_DIR) : __dirname;
+const UPLOADS_DIR = path.join(STORAGE_ROOT, "uploads");
+const DATA_DIR = path.join(STORAGE_ROOT, "data");
+const DATA_FILE = path.join(DATA_DIR, "album.json");
+const DEFAULT_ADMIN_PASSWORD = "admin123";
+
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".avif": "image/avif",
+  ".svg": "image/svg+xml",
+};
+
+const EXTENSIONS_BY_TYPE = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/avif": ".avif",
+};
+
+const ALLOWED_IMAGE_TYPES = new Set(Object.keys(EXTENSIONS_BY_TYPE));
+
+function buildConfig(overrides = {}) {
+  return {
+    host: overrides.host || process.env.HOST || "127.0.0.1",
+    port: overrides.port ?? Number(process.env.PORT || 3000),
+    publicDir: overrides.publicDir || PUBLIC_DIR,
+    uploadsDir: overrides.uploadsDir || UPLOADS_DIR,
+    dataFile: overrides.dataFile || DATA_FILE,
+    maxUploadBytes: overrides.maxUploadBytes || 15 * 1024 * 1024,
+    sessionTtlMs: overrides.sessionTtlMs || 8 * 60 * 60 * 1000,
+    adminPassword: overrides.adminPassword || process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD,
+  };
+}
+
+function createAlbumServer(overrides = {}) {
+  const config = buildConfig(overrides);
+  ensureStorage(config);
+  const sessions = new Map();
+  const server = http.createServer((req, res) => {
+    void handleRequest(req, res, config, sessions);
+  });
+  return { server, config, sessions };
+}
+
+function startServer(overrides = {}) {
+  const { server, config } = createAlbumServer(overrides);
+  server.listen(config.port, config.host, () => {
+    console.log(`SPACEGARDEN is running at http://${config.host}:${config.port}`);
+    if (config.adminPassword === DEFAULT_ADMIN_PASSWORD) {
+      console.log("Admin password is using the default value 'admin123'. Set ADMIN_PASSWORD before production use.");
+    }
+  });
+  return server;
+}
+
+async function handleRequest(req, res, config, sessions) {
+  applySecurityHeaders(res);
+
+  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  const pathname = decodeURIComponent(url.pathname);
+
+  try {
+    if (req.method === "GET" && pathname === "/api/photos") {
+      return sendJson(res, 200, { photos: listPhotos(config) });
+    }
+
+    if (req.method === "GET" && pathname === "/api/admin/session") {
+      return sendJson(res, 200, { authenticated: isAuthenticated(req, sessions) });
+    }
+
+    if (req.method === "POST" && pathname === "/api/admin/login") {
+      return handleAdminLogin(req, res, config, sessions);
+    }
+
+    if (req.method === "POST" && pathname === "/api/admin/logout") {
+      return handleAdminLogout(req, res, sessions);
+    }
+
+    if (req.method === "POST" && pathname === "/api/admin/photos") {
+      return handlePhotoUpload(req, res, config, sessions);
+    }
+
+    if (req.method === "PATCH" && pathname.startsWith("/api/admin/photos/")) {
+      const photoId = pathname.replace("/api/admin/photos/", "").trim();
+      return handlePhotoUpdate(req, res, config, sessions, photoId);
+    }
+
+    if (req.method === "DELETE" && pathname.startsWith("/api/admin/photos/")) {
+      const photoId = pathname.replace("/api/admin/photos/", "").trim();
+      return handlePhotoDelete(req, res, config, sessions, photoId);
+    }
+
+    if (req.method === "GET" && pathname === "/") {
+      return serveFile(res, path.join(config.publicDir, "index.html"));
+    }
+
+    if (req.method === "GET" && pathname === "/admin") {
+      return serveFile(res, path.join(config.publicDir, "admin.html"));
+    }
+
+    if (req.method === "GET" && pathname.startsWith("/uploads/")) {
+      const relativePath = pathname.replace("/uploads/", "");
+      return serveStaticAsset(res, config.uploadsDir, relativePath);
+    }
+
+    if (req.method === "GET") {
+      const relativePath = pathname.replace(/^\//, "");
+      return serveStaticAsset(res, config.publicDir, relativePath);
+    }
+
+    return sendJson(res, 404, { error: "Route not found." });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    const message = statusCode >= 500 ? "Something went wrong on the server." : error.message;
+    if (statusCode >= 500) {
+      console.error(error);
+    }
+    return sendJson(res, statusCode, { error: message });
+  }
+}
+
+function ensureStorage(config) {
+  fs.mkdirSync(config.publicDir, { recursive: true });
+  fs.mkdirSync(path.dirname(config.dataFile), { recursive: true });
+  fs.mkdirSync(config.uploadsDir, { recursive: true });
+
+  if (!fs.existsSync(config.dataFile)) {
+    fs.writeFileSync(config.dataFile, "[]\n", "utf8");
+  }
+}
+
+function applySecurityHeaders(res) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  );
+}
+
+function listPhotos(config) {
+  return readAlbum(config).sort((left, right) => {
+    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+  });
+}
+
+function readAlbum(config) {
+  try {
+    const raw = fs.readFileSync(config.dataFile, "utf8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function writeAlbum(config, photos) {
+  fs.writeFileSync(config.dataFile, `${JSON.stringify(photos, null, 2)}\n`, "utf8");
+}
+
+async function handleAdminLogin(req, res, config, sessions) {
+  const body = await parseJsonBody(req, 8 * 1024);
+  const password = typeof body.password === "string" ? body.password : "";
+
+  if (!password || password !== config.adminPassword) {
+    return sendJson(res, 401, { error: "Invalid admin password." });
+  }
+
+  const token = crypto.randomUUID();
+  sessions.set(token, {
+    expiresAt: Date.now() + config.sessionTtlMs,
+  });
+
+  res.setHeader("Set-Cookie", buildSessionCookie(token, config.sessionTtlMs));
+  return sendJson(res, 200, { authenticated: true });
+}
+
+async function handleAdminLogout(req, res, sessions) {
+  const cookies = parseCookies(req);
+  const token = cookies.album_admin;
+  if (token) {
+    sessions.delete(token);
+  }
+
+  res.setHeader("Set-Cookie", clearSessionCookie());
+  return sendJson(res, 200, { authenticated: false });
+}
+
+async function handlePhotoUpload(req, res, config, sessions) {
+  if (!isAuthenticated(req, sessions)) {
+    return sendJson(res, 401, { error: "Admin login required." });
+  }
+
+  const contentType = req.headers["content-type"] || "";
+  if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
+    return sendJson(res, 400, { error: "Upload requests must use multipart/form-data." });
+  }
+
+  const body = await collectRequestBody(req, config.maxUploadBytes);
+  const { fields, files } = parseMultipartForm(body, contentType);
+  const file = files.find((entry) => entry.fieldName === "photo") || files[0];
+
+  if (!file) {
+    return sendJson(res, 400, { error: "Choose an image before uploading." });
+  }
+
+  if (!ALLOWED_IMAGE_TYPES.has(file.contentType)) {
+    return sendJson(res, 400, { error: "Only JPG, PNG, WEBP, GIF, and AVIF images are supported." });
+  }
+
+  const storedFileName = `${Date.now()}-${crypto.randomUUID()}${pickExtension(file.filename, file.contentType)}`;
+  const photoPath = path.join(config.uploadsDir, storedFileName);
+  await fs.promises.writeFile(photoPath, file.data);
+
+  const title = sanitizeText(fields.title, 120) || titleFromFilename(file.filename);
+  const description = sanitizeText(fields.description, 8000);
+  const createdAt = new Date().toISOString();
+
+  const photo = {
+    id: crypto.randomUUID(),
+    title,
+    description,
+    filename: storedFileName,
+    originalFilename: file.filename,
+    mimeType: file.contentType,
+    size: file.data.length,
+    createdAt,
+    url: `/uploads/${storedFileName}`,
+  };
+
+  const photos = readAlbum(config);
+  photos.unshift(photo);
+  writeAlbum(config, photos);
+
+  return sendJson(res, 201, { photo });
+}
+
+async function handlePhotoDelete(req, res, config, sessions, photoId) {
+  if (!isAuthenticated(req, sessions)) {
+    return sendJson(res, 401, { error: "Admin login required." });
+  }
+
+  if (!photoId) {
+    return sendJson(res, 400, { error: "Missing photo id." });
+  }
+
+  const photos = readAlbum(config);
+  const photoIndex = photos.findIndex((photo) => photo.id === photoId);
+
+  if (photoIndex === -1) {
+    return sendJson(res, 404, { error: "Photo not found." });
+  }
+
+  const [photo] = photos.splice(photoIndex, 1);
+  writeAlbum(config, photos);
+
+  try {
+    await fs.promises.unlink(path.join(config.uploadsDir, photo.filename));
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  return sendJson(res, 200, { deletedId: photo.id });
+}
+
+async function handlePhotoUpdate(req, res, config, sessions, photoId) {
+  if (!isAuthenticated(req, sessions)) {
+    return sendJson(res, 401, { error: "Admin login required." });
+  }
+
+  if (!photoId) {
+    return sendJson(res, 400, { error: "Missing photo id." });
+  }
+
+  const body = await parseJsonBody(req, 24 * 1024);
+  const hasTitle = Object.prototype.hasOwnProperty.call(body, "title");
+  const hasDescription = Object.prototype.hasOwnProperty.call(body, "description");
+
+  if (!hasTitle && !hasDescription) {
+    return sendJson(res, 400, { error: "Add a title or description to update." });
+  }
+
+  const photos = readAlbum(config);
+  const photoIndex = photos.findIndex((photo) => photo.id === photoId);
+
+  if (photoIndex === -1) {
+    return sendJson(res, 404, { error: "Photo not found." });
+  }
+
+  const currentPhoto = photos[photoIndex];
+  const nextTitle = hasTitle ? sanitizeText(body.title, 120) : currentPhoto.title;
+  const nextDescription = hasDescription ? sanitizeText(body.description, 8000) : currentPhoto.description;
+  const updatedPhoto = {
+    ...currentPhoto,
+    title: nextTitle || currentPhoto.title || "Untitled photo",
+    description: nextDescription,
+  };
+
+  photos[photoIndex] = updatedPhoto;
+  writeAlbum(config, photos);
+
+  return sendJson(res, 200, { photo: updatedPhoto });
+}
+
+function parseCookies(req) {
+  const cookieHeader = req.headers.cookie || "";
+  return cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((cookies, part) => {
+      const separatorIndex = part.indexOf("=");
+      if (separatorIndex === -1) {
+        return cookies;
+      }
+      const key = part.slice(0, separatorIndex).trim();
+      const value = part.slice(separatorIndex + 1).trim();
+      cookies[key] = decodeURIComponent(value);
+      return cookies;
+    }, {});
+}
+
+function isAuthenticated(req, sessions) {
+  const token = parseCookies(req).album_admin;
+  if (!token) {
+    return false;
+  }
+
+  const session = sessions.get(token);
+  if (!session) {
+    return false;
+  }
+
+  if (session.expiresAt < Date.now()) {
+    sessions.delete(token);
+    return false;
+  }
+
+  return true;
+}
+
+function buildSessionCookie(token, maxAgeMs) {
+  return `album_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(maxAgeMs / 1000)}`;
+}
+
+function clearSessionCookie() {
+  return "album_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
+}
+
+async function parseJsonBody(req, maxBytes) {
+  const body = await collectRequestBody(req, maxBytes);
+  if (body.length === 0) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(body.toString("utf8"));
+  } catch (error) {
+    throw createHttpError(400, "Request body must be valid JSON.");
+  }
+}
+
+async function collectRequestBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let exceeded = false;
+
+    req.on("data", (chunk) => {
+      if (exceeded) {
+        return;
+      }
+
+      size += chunk.length;
+      if (size > maxBytes) {
+        exceeded = true;
+        req.resume();
+        reject(createHttpError(413, "Upload is too large."));
+        return;
+      }
+
+      chunks.push(chunk);
+    });
+
+    req.on("end", () => {
+      if (!exceeded) {
+        resolve(Buffer.concat(chunks));
+      }
+    });
+
+    req.on("error", reject);
+  });
+}
+
+function parseMultipartForm(body, contentType) {
+  const boundaryMatch = /boundary=([^;]+)/i.exec(contentType);
+  if (!boundaryMatch) {
+    throw createHttpError(400, "Missing multipart boundary.");
+  }
+
+  const boundary = boundaryMatch[1].trim().replace(/^"|"$/g, "");
+  const raw = body.toString("latin1");
+  const parts = raw.split(`--${boundary}`).slice(1, -1);
+  const fields = {};
+  const files = [];
+
+  for (const rawPart of parts) {
+    let part = rawPart;
+
+    if (part.startsWith("\r\n")) {
+      part = part.slice(2);
+    }
+
+    if (part.endsWith("\r\n")) {
+      part = part.slice(0, -2);
+    }
+
+    if (!part) {
+      continue;
+    }
+
+    const headerEnd = part.indexOf("\r\n\r\n");
+    if (headerEnd === -1) {
+      continue;
+    }
+
+    const headerText = part.slice(0, headerEnd);
+    const bodyText = part.slice(headerEnd + 4);
+    const headers = {};
+
+    for (const headerLine of headerText.split("\r\n")) {
+      const separatorIndex = headerLine.indexOf(":");
+      if (separatorIndex === -1) {
+        continue;
+      }
+      const key = headerLine.slice(0, separatorIndex).trim().toLowerCase();
+      const value = headerLine.slice(separatorIndex + 1).trim();
+      headers[key] = value;
+    }
+
+    const disposition = headers["content-disposition"] || "";
+    const nameMatch = /name="([^"]+)"/i.exec(disposition);
+    if (!nameMatch) {
+      continue;
+    }
+
+    const fieldName = nameMatch[1];
+    const fileNameMatch = /filename="([^"]*)"/i.exec(disposition);
+
+    if (fileNameMatch && fileNameMatch[1]) {
+      files.push({
+        fieldName,
+        filename: path.basename(fileNameMatch[1]),
+        contentType: headers["content-type"] || "application/octet-stream",
+        data: Buffer.from(bodyText, "latin1"),
+      });
+    } else {
+      fields[fieldName] = bodyText;
+    }
+  }
+
+  return { fields, files };
+}
+
+function pickExtension(filename, mimeType) {
+  const ext = path.extname(filename || "").toLowerCase();
+  if (EXTENSIONS_BY_TYPE[mimeType] && ext === EXTENSIONS_BY_TYPE[mimeType]) {
+    return ext;
+  }
+  if (ext && Object.values(EXTENSIONS_BY_TYPE).includes(ext)) {
+    return ext;
+  }
+  return EXTENSIONS_BY_TYPE[mimeType] || ".jpg";
+}
+
+function titleFromFilename(filename) {
+  const baseName = path.parse(filename).name || "Untitled photo";
+  const cleaned = baseName
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return "Untitled photo";
+  }
+
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function sanitizeText(value, maxLength) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function serveStaticAsset(res, baseDir, relativePath) {
+  const filePath = safeResolve(baseDir, relativePath);
+  if (!filePath) {
+    return sendJson(res, 404, { error: "File not found." });
+  }
+  return serveFile(res, filePath);
+}
+
+function safeResolve(baseDir, relativePath) {
+  const normalizedBase = path.resolve(baseDir);
+  const resolvedPath = path.resolve(baseDir, relativePath);
+
+  if (resolvedPath !== normalizedBase && !resolvedPath.startsWith(`${normalizedBase}${path.sep}`)) {
+    return null;
+  }
+
+  return resolvedPath;
+}
+
+function serveFile(res, filePath) {
+  fs.stat(filePath, (error, stats) => {
+    if (error || !stats.isFile()) {
+      return sendJson(res, 404, { error: "File not found." });
+    }
+
+    res.writeHead(200, {
+      "Content-Type": getContentType(filePath),
+      "Content-Length": stats.size,
+    });
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+    stream.on("error", () => {
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Unable to read the requested file." });
+      } else {
+        res.destroy();
+      }
+    });
+  });
+}
+
+function getContentType(filePath) {
+  return MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+}
+
+function sendJson(res, statusCode, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+  });
+  res.end(body);
+}
+
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  createAlbumServer,
+  startServer,
+};

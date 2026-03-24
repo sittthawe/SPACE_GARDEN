@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SPACEGARDEN</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="page page-home">
+    <header class="hero-shell site-shell">
+      <nav class="site-nav">
+        <a class="brand-lockup" href="/">
+          <span class="brand">SPACEGARDEN</span>
+        </a>
+        <div class="nav-links">
+          <a class="nav-link is-active" href="/">Gallery</a>
+          <a class="nav-link" href="/admin">Studio</a>
+        </div>
+      </nav>
+
+      <section class="hero hero-centered">
+        <p class="eyebrow">Curated digital gallery</p>
+        <h1 class="hero-title">SPACEGARDEN</h1>
+        <p class="hero-subtitle">
+          AI-crafted imagery born from imagination where generative intelligence meets artistic vision. Every piece is an original
+          visual creation.
+        </p>
+        <div class="hero-divider"></div>
+        <div class="hero-meta">
+          <div class="hero-meta-item">
+            <span>Works</span>
+            <strong id="hero-total">0</strong>
+          </div>
+          <div class="hero-meta-item">
+            <span>Latest</span>
+            <strong id="hero-last-upload">Waiting</strong>
+          </div>
+          <div class="hero-meta-item">
+            <span>Storage</span>
+            <strong id="hero-storage">0 MB</strong>
+          </div>
+        </div>
+      </section>
+    </header>
+
+    <main class="site-shell gallery-shell">
+      <section class="gallery-status-bar">
+        <span class="toolbar-chip" id="photo-count">0 photos live</span>
+        <span class="toolbar-chip" id="gallery-sync">Ready to sync</span>
+      </section>
+
+      <section class="gallery-grid" id="gallery-grid" aria-live="polite"></section>
+
+      <section class="empty-state" id="empty-state" hidden>
+        <div class="empty-state-card">
+          <p class="section-kicker">No photos yet</p>
+          <h2>The gallery is ready for its first image.</h2>
+          <p>Open Studio, upload a photo, and it will appear here automatically.</p>
+          <a class="button button-primary" href="/admin">Open Studio</a>
+        </div>
+      </section>
+    </main>
+
+    <div class="lightbox" id="lightbox" hidden>
+      <button class="lightbox-close" id="lightbox-close" type="button" aria-label="Close image view">
+        Close
+      </button>
+      <div class="lightbox-card">
+        <img id="lightbox-image" alt="" />
+        <div class="lightbox-meta">
+          <p class="section-kicker" id="lightbox-date"></p>
+          <h3 id="lightbox-title"></h3>
+          <p id="lightbox-description"></p>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

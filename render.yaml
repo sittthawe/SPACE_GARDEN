@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: spacegarden
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: NODE_VERSION
+        value: 20
+      - key: STORAGE_DIR
+        value: /opt/render/project/src/storage
+      - key: ADMIN_PASSWORD
+        sync: false

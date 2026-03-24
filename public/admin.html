@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SPACEGARDEN Studio</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="page page-admin">
+    <header class="hero-shell site-shell">
+      <nav class="site-nav">
+        <a class="brand-lockup" href="/">
+          <span class="brand">SPACEGARDEN</span>
+        </a>
+        <div class="nav-links">
+          <a class="nav-link" href="/">Gallery</a>
+          <a class="nav-link is-active" href="/admin">Studio</a>
+          <button class="nav-link nav-link-button" id="logout-button" type="button" hidden>Log out</button>
+        </div>
+      </nav>
+
+      <section class="hero hero-studio">
+        <div class="hero-copy">
+          <p class="eyebrow">Studio</p>
+          <h1 class="studio-title">Publish and manage the collection.</h1>
+          <p class="studio-subtitle">
+            Upload new work, preview files before publishing, and remove older images from a studio built to match the gallery.
+          </p>
+        </div>
+      </section>
+    </header>
+
+    <main class="site-shell admin-main">
+      <section class="login-layout" id="login-panel">
+        <section class="panel login-panel">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Secure entry</p>
+              <h2>Admin login</h2>
+            </div>
+          </div>
+          <form class="stack-form" id="login-form">
+            <label class="field">
+              <span>Password</span>
+              <input type="password" name="password" id="password" placeholder="Enter admin password" required />
+            </label>
+            <button class="button button-primary" type="submit">Sign in</button>
+            <p class="status-line" id="login-status">Use the password from the <code>ADMIN_PASSWORD</code> environment variable.</p>
+          </form>
+        </section>
+
+        <aside class="panel side-panel">
+          <p class="section-kicker">Studio notes</p>
+          <h2>Keep the workflow simple.</h2>
+          <div class="side-list">
+            <div class="side-list-item">
+              <strong>Preview first</strong>
+              <span>Check the image before publishing.</span>
+            </div>
+            <div class="side-list-item">
+              <strong>Publish instantly</strong>
+              <span>New uploads appear in Gallery right away.</span>
+            </div>
+            <div class="side-list-item">
+              <strong>Delete cleanly</strong>
+              <span>Remove outdated photos from the same page.</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="admin-overview" id="admin-overview" hidden>
+        <article class="overview-card">
+          <strong id="admin-count">0 photos</strong>
+          <span>published works</span>
+        </article>
+        <article class="overview-card">
+          <strong id="admin-latest">No uploads yet</strong>
+          <span>latest update</span>
+        </article>
+        <article class="overview-card">
+          <strong id="admin-storage">0 MB</strong>
+          <span>stored media</span>
+        </article>
+      </section>
+
+      <section class="admin-grid" id="admin-grid" hidden>
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Publishing</p>
+              <h2>Upload a new image</h2>
+            </div>
+          </div>
+
+          <form class="stack-form" id="upload-form" enctype="multipart/form-data">
+            <label class="field">
+              <span>Title</span>
+              <input type="text" name="title" maxlength="120" placeholder="Moonlit portrait" />
+            </label>
+
+            <label class="field">
+              <span>Description</span>
+              <textarea name="description" rows="6" placeholder="Optional caption, prompt, or longer context with infinity themes"></textarea>
+            </label>
+
+            <label class="field">
+              <span>Image file</span>
+              <div class="file-dropzone">
+                <input
+                  type="file"
+                  id="photo-input"
+                  name="photo"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                  required
+                />
+                <div class="dropzone-copy">
+                  <strong>Select image</strong>
+                  <p>JPG, PNG, WEBP, GIF, and AVIF are supported.</p>
+                </div>
+              </div>
+            </label>
+
+            <div class="preview-stack">
+              <div class="upload-preview" id="upload-preview-shell" hidden>
+                <img id="upload-preview" alt="Selected upload preview" />
+              </div>
+              <div class="preview-meta" id="preview-meta" hidden>
+                <span class="section-kicker">Selected file</span>
+                <strong id="preview-name"></strong>
+              </div>
+            </div>
+
+            <button class="button button-primary" type="submit">Upload photo</button>
+            <p class="status-line" id="upload-status">Supported formats: JPG, PNG, WEBP, GIF, AVIF. Long descriptions are supported.</p>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Library</p>
+              <h2>Current collection</h2>
+            </div>
+            <span class="count-pill" id="admin-library-count">0 photos</span>
+          </div>
+
+          <div class="admin-gallery" id="admin-gallery"></div>
+
+          <div class="empty-state slim-empty" id="admin-empty" hidden>
+            <div class="empty-state-card">
+              <p class="section-kicker">No uploads yet</p>
+              <h2>The studio is ready.</h2>
+              <p>Your first uploaded image will appear here with delete controls.</p>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/admin.js" defer></script>
+  </body>
+</html>
