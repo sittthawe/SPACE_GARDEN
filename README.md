@@ -1,5 +1,7 @@
 # SPACEGARDEN
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fsittthawe%2FSPACE_GARDEN)
+
 A full-stack photo album app with:
 
 - public gallery page
@@ -69,3 +71,4 @@ Important:
 - this app stores uploads on disk
 - on platforms with ephemeral storage, uploads are lost after restart or redeploy
 - for Render, attach a persistent disk and mount it under `/opt/render/project/src/storage`
+- the included `render.yaml` already configures that disk path for Render

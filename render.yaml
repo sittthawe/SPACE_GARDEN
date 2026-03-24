@@ -2,8 +2,10 @@ services:
   - type: web
     name: spacegarden
     runtime: node
+    plan: starter
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /
     envVars:
       - key: HOST
         value: 0.0.0.0
@@ -13,3 +15,7 @@ services:
         value: /opt/render/project/src/storage
       - key: ADMIN_PASSWORD
         sync: false
+    disk:
+      name: media
+      mountPath: /opt/render/project/src/storage
+      sizeGB: 10
