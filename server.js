@@ -5,11 +5,8 @@ const crypto = require("crypto");
 const { buildPhotoUrl, buildStorageSettings, createStorageAdapter } = require("./storage");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
-const STORAGE_ROOT = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_DIR) : __dirname;
-const UPLOADS_DIR = path.join(STORAGE_ROOT, "uploads");
-const DATA_DIR = path.join(STORAGE_ROOT, "data");
-const DATA_FILE = path.join(DATA_DIR, "album.json");
 const DEFAULT_ADMIN_PASSWORD = "RasDave26";
+const DEFAULT_RENDER_STORAGE_DIR = path.join(process.cwd(), "storage");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -61,13 +58,25 @@ const DESCRIPTION_SECTION_REPLACEMENTS = [
 function buildConfig(overrides = {}) {
   const storageSettings = buildStorageSettings(overrides);
   const defaultHost = process.env.HOST || (process.env.PORT ? "0.0.0.0" : "127.0.0.1");
+  const resolvedStorage = resolveStoragePaths(overrides);
+  const uploadsDir = overrides.uploadsDir || path.join(resolvedStorage.storageRoot, "uploads");
+  const dataFile = overrides.dataFile || path.join(resolvedStorage.storageRoot, "data", "album.json");
+  const useImplicitLegacyFallback = !overrides.uploadsDir && !overrides.dataFile;
 
   return {
     host: overrides.host || defaultHost,
     port: overrides.port ?? Number(process.env.PORT || 3000),
     publicDir: overrides.publicDir || PUBLIC_DIR,
-    uploadsDir: overrides.uploadsDir || UPLOADS_DIR,
-    dataFile: overrides.dataFile || DATA_FILE,
+    storageRoot: resolvedStorage.storageRoot,
+    storageRootSource: resolvedStorage.source,
+    uploadsDir,
+    dataFile,
+    legacyUploadsDir:
+      overrides.legacyUploadsDir ||
+      (useImplicitLegacyFallback ? path.join(resolvedStorage.legacyStorageRoot, "uploads") : uploadsDir),
+    legacyDataFile:
+      overrides.legacyDataFile ||
+      (useImplicitLegacyFallback ? path.join(resolvedStorage.legacyStorageRoot, "data", "album.json") : dataFile),
     storageMode: storageSettings.mode,
     r2: storageSettings.r2,
     maxUploadBytes: overrides.maxUploadBytes || 15 * 1024 * 1024,
@@ -92,11 +101,46 @@ function startServer(overrides = {}) {
   const { server, config } = createAlbumServer(overrides);
   server.listen(config.port, config.host, () => {
     console.log(`SPACEGARDEN is running at http://${config.host}:${config.port}`);
+    if (config.storageMode === "local") {
+      console.log(`Local uploads are stored at ${config.storageRoot}`);
+      if (config.storageRootSource === "render-default") {
+        console.log("On Render, attach a persistent disk to this same path to keep uploads across deploys.");
+      }
+    } else if (config.storageMode === "r2") {
+      console.log("Using Cloudflare R2 for image and album storage.");
+    }
     if (config.adminPassword === DEFAULT_ADMIN_PASSWORD) {
       console.log("Admin password is using the built-in default value. Set ADMIN_PASSWORD before production use.");
     }
   });
   return server;
+}
+
+function resolveStoragePaths(overrides = {}) {
+  const legacyStorageRoot = path.resolve(overrides.legacyStorageDir || __dirname);
+  const explicitStorageDir = overrides.storageDir || process.env.STORAGE_DIR;
+
+  if (explicitStorageDir) {
+    return {
+      storageRoot: path.resolve(explicitStorageDir),
+      legacyStorageRoot,
+      source: "explicit",
+    };
+  }
+
+  if (String(process.env.RENDER || "").toLowerCase() === "true") {
+    return {
+      storageRoot: DEFAULT_RENDER_STORAGE_DIR,
+      legacyStorageRoot,
+      source: "render-default",
+    };
+  }
+
+  return {
+    storageRoot: legacyStorageRoot,
+    legacyStorageRoot,
+    source: "legacy-default",
+  };
 }
 
 async function handleRequest(req, res, config, sessions) {

@@ -47,6 +47,7 @@ By default:
 - uploaded files go into `uploads/`
 - album metadata is stored in `data/album.json`
 - set `STORAGE_DIR` if you want uploads and album data stored somewhere else
+- on Render, if `STORAGE_DIR` is not set, the app automatically uses `storage/` so it matches the persistent disk path from `render.yaml`
 
 ### Cloudflare R2 mode
 
@@ -106,6 +107,7 @@ STORAGE_DIR=/opt/render/project/src/storage
 Important:
 
 - R2 mode is the best option for stateless or low-cost hosting because uploads and album metadata survive restarts
+- on Render, a persistent disk mounted at `/opt/render/project/src/storage` keeps uploads stable across restarts and deploys
 - local-disk mode still works, but uploads and metadata will be lost on hosts with ephemeral storage unless you attach a persistent disk
 - the included `render.yaml` includes both the existing disk-based fallback and the R2 environment variable slots
 

@@ -49,13 +49,7 @@ function createStorageAdapter(config, overrides = {}) {
 }
 
 function createLocalStorage(config) {
-  fs.mkdirSync(config.publicDir, { recursive: true });
-  fs.mkdirSync(path.dirname(config.dataFile), { recursive: true });
-  fs.mkdirSync(config.uploadsDir, { recursive: true });
-
-  if (!fs.existsSync(config.dataFile)) {
-    fs.writeFileSync(config.dataFile, "[]\n", "utf8");
-  }
+  initializeLocalStorage(config);
 
   return {
     mode: "local",
@@ -116,6 +110,74 @@ function createLocalStorage(config) {
       }
     },
   };
+}
+
+function initializeLocalStorage(config) {
+  fs.mkdirSync(config.publicDir, { recursive: true });
+  fs.mkdirSync(path.dirname(config.dataFile), { recursive: true });
+  fs.mkdirSync(config.uploadsDir, { recursive: true });
+
+  migrateLegacyAlbum(config);
+  migrateLegacyUploads(config);
+
+  if (!fs.existsSync(config.dataFile)) {
+    fs.writeFileSync(config.dataFile, "[]\n", "utf8");
+  }
+}
+
+function migrateLegacyAlbum(config) {
+  if (!config.legacyDataFile || pathsMatch(config.legacyDataFile, config.dataFile)) {
+    return;
+  }
+
+  if (fs.existsSync(config.dataFile) || !fs.existsSync(config.legacyDataFile)) {
+    return;
+  }
+
+  fs.copyFileSync(config.legacyDataFile, config.dataFile);
+}
+
+function migrateLegacyUploads(config) {
+  if (!config.legacyUploadsDir || pathsMatch(config.legacyUploadsDir, config.uploadsDir)) {
+    return;
+  }
+
+  if (!fs.existsSync(config.legacyUploadsDir)) {
+    return;
+  }
+
+  copyDirectoryContents(config.legacyUploadsDir, config.uploadsDir);
+}
+
+function copyDirectoryContents(sourceDir, destinationDir) {
+  fs.mkdirSync(destinationDir, { recursive: true });
+
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destinationPath = path.join(destinationDir, entry.name);
+
+    if (entry.isDirectory()) {
+      copyDirectoryContents(sourcePath, destinationPath);
+      continue;
+    }
+
+    if (!entry.isFile() || fs.existsSync(destinationPath)) {
+      continue;
+    }
+
+    fs.copyFileSync(sourcePath, destinationPath);
+  }
+}
+
+function pathsMatch(left, right) {
+  const resolvedLeft = path.resolve(left);
+  const resolvedRight = path.resolve(right);
+
+  if (process.platform === "win32") {
+    return resolvedLeft.toLowerCase() === resolvedRight.toLowerCase();
+  }
+
+  return resolvedLeft === resolvedRight;
 }
 
 function createR2Storage(config) {
