@@ -110,7 +110,7 @@ function handleGalleryClick(event) {
   if (toggle) {
     event.preventDefault();
     event.stopPropagation();
-    toggleDescription(toggle);
+    openCardFromElement(toggle);
     return;
   }
 
@@ -119,10 +119,7 @@ function handleGalleryClick(event) {
     return;
   }
 
-  const index = Number(card.dataset.index);
-  if (!Number.isNaN(index)) {
-    openLightbox(index);
-  }
+  openCardFromElement(card);
 }
 
 function openLightbox(index) {
@@ -319,21 +316,21 @@ function buildExpandableDescription(text, threshold = 180) {
   return `
     <div class="description-block">
       <p class="description-copy${needsToggle ? " is-collapsed" : ""}">${escapeHtml(normalized)}</p>
-      ${needsToggle ? '<button class="description-toggle" type="button">See more</button>' : ""}
+      ${needsToggle ? '<button class="description-toggle" type="button">View details</button>' : ""}
     </div>
   `;
 }
 
-function toggleDescription(button) {
-  const block = button.closest(".description-block");
-  const copy = block?.querySelector(".description-copy");
-  if (!copy) {
+function openCardFromElement(element) {
+  const card = element.closest(".gallery-card");
+  if (!card) {
     return;
   }
 
-  const expanded = copy.classList.toggle("is-expanded");
-  copy.classList.toggle("is-collapsed", !expanded);
-  button.textContent = expanded ? "See less" : "See more";
+  const index = Number(card.dataset.index);
+  if (!Number.isNaN(index)) {
+    openLightbox(index);
+  }
 }
 
 function formatDate(value, style = "long") {
