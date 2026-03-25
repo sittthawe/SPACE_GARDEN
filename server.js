@@ -103,8 +103,8 @@ function startServer(overrides = {}) {
     console.log(`SPACEGARDEN is running at http://${config.host}:${config.port}`);
     if (config.storageMode === "local") {
       console.log(`Local uploads are stored at ${config.storageRoot}`);
-      if (config.storageRootSource === "render-default") {
-        console.log("On Render, attach a persistent disk to this same path to keep uploads across deploys.");
+      if (String(process.env.RENDER || "").toLowerCase() === "true") {
+        console.log(`On Render, attach a persistent disk at ${config.storageRoot} to keep uploads across deploys.`);
       }
     } else if (config.storageMode === "r2") {
       console.log("Using Cloudflare R2 for image and album storage.");

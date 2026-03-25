@@ -119,3 +119,71 @@ test("local storage migrates legacy album data into a configured persistent dire
   assert.equal(imageResponse.status, 200);
   assert.deepEqual(Buffer.from(await imageResponse.arrayBuffer()), legacyAssetData);
 });
+
+test("local storage keeps uploaded photos across server restarts when reusing the same storage directory", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-"));
+  const storageRoot = path.join(tempRoot, "persistent");
+
+  async function startTestServer() {
+    const { server } = createAlbumServer({
+      host: "127.0.0.1",
+      port: 0,
+      storageDir: storageRoot,
+      adminPassword: "secret-pass",
+    });
+
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return server;
+  }
+
+  const firstServer = await startTestServer();
+  let activeServer = firstServer;
+  let port = firstServer.address().port;
+  let baseUrl = `http://127.0.0.1:${port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => activeServer.close(resolve));
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password: "secret-pass" }),
+  });
+  assert.equal(loginResponse.status, 200);
+
+  const cookie = (loginResponse.headers.get("set-cookie") || "").split(";")[0];
+  const form = new FormData();
+  form.set("title", "Persistent upload");
+  form.set("description", "Stored on disk across restarts");
+  form.set("photo", new Blob([Buffer.from([7, 6, 5, 4])], { type: "image/png" }), "persistent.png");
+
+  const uploadResponse = await fetch(`${baseUrl}/api/admin/photos`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+    },
+    body: form,
+  });
+  assert.equal(uploadResponse.status, 201);
+
+  const uploadPayload = await uploadResponse.json();
+  await new Promise((resolve) => firstServer.close(resolve));
+
+  const secondServer = await startTestServer();
+  activeServer = secondServer;
+  port = secondServer.address().port;
+  baseUrl = `http://127.0.0.1:${port}`;
+
+  const photosPayload = await fetch(`${baseUrl}/api/photos`).then((response) => response.json());
+  assert.equal(photosPayload.photos.length, 1);
+  assert.equal(photosPayload.photos[0].title, "Persistent upload");
+  assert.equal(photosPayload.photos[0].filename, uploadPayload.photo.filename);
+
+  const imageResponse = await fetch(`${baseUrl}${uploadPayload.photo.url}`);
+  assert.equal(imageResponse.status, 200);
+  assert.deepEqual(Buffer.from(await imageResponse.arrayBuffer()), Buffer.from([7, 6, 5, 4]));
+});

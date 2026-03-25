@@ -11,8 +11,8 @@ services:
         value: 0.0.0.0
       - key: NODE_VERSION
         value: 20
-      - key: STORAGE_MODE
-        value: r2
+      - key: STORAGE_DIR
+        value: /opt/render/project/src/storage
       - key: ADMIN_PASSWORD
         sync: false
       - key: R2_ACCOUNT_ID
@@ -27,3 +27,6 @@ services:
         value: album.json
       - key: R2_UPLOAD_PREFIX
         value: uploads
+    disk:
+      name: storage
+      mountPath: /opt/render/project/src/storage

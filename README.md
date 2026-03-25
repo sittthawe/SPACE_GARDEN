@@ -48,6 +48,7 @@ By default:
 - album metadata is stored in `data/album.json`
 - set `STORAGE_DIR` if you want uploads and album data stored somewhere else
 - local mode is best for development, not for production deploys
+- on Render, use a persistent disk mount for `STORAGE_DIR` so uploads survive deploys and restarts
 
 ### Cloudflare R2 mode
 
@@ -100,7 +101,8 @@ R2_UPLOAD_PREFIX=uploads
 
 Important:
 
-- Render is configured for `STORAGE_MODE=r2` in `render.yaml`, so set the R2 secrets before deploying
-- R2 mode keeps uploaded images and album metadata outside the app filesystem
+- the included `render.yaml` mounts a persistent disk at `/opt/render/project/src/storage` and sets `STORAGE_DIR` there
+- if you do not set the R2 secrets, uploads stay on that disk and survive deploys and restarts
+- if you do set the R2 secrets, the app switches to R2 automatically and stores both images and album metadata outside the app filesystem
 - local uploaded files and `data/album.json` are now ignored in git so gallery content stays out of the repository
 
