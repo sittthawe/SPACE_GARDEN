@@ -7,8 +7,8 @@ A full-stack photo album app with:
 - public gallery page
 - admin login panel
 - image upload and delete actions
-- local disk storage by default
-- optional Cloudflare R2 storage for both images and album metadata
+- local disk storage for development
+- Cloudflare R2 storage for deployed images and album metadata
 
 ## Run it
 
@@ -47,7 +47,7 @@ By default:
 - uploaded files go into `uploads/`
 - album metadata is stored in `data/album.json`
 - set `STORAGE_DIR` if you want uploads and album data stored somewhere else
-- on Render, if `STORAGE_DIR` is not set, the app automatically uses `storage/` so it matches the persistent disk path from `render.yaml`
+- local mode is best for development, not for production deploys
 
 ### Cloudflare R2 mode
 
@@ -98,16 +98,9 @@ R2_ALBUM_KEY=album.json
 R2_UPLOAD_PREFIX=uploads
 ```
 
-If you stay on local-disk mode in production:
-
-```bash
-STORAGE_DIR=/opt/render/project/src/storage
-```
-
 Important:
 
-- R2 mode is the best option for stateless or low-cost hosting because uploads and album metadata survive restarts
-- on Render, a persistent disk mounted at `/opt/render/project/src/storage` keeps uploads stable across restarts and deploys
-- local-disk mode still works, but uploads and metadata will be lost on hosts with ephemeral storage unless you attach a persistent disk
-- the included `render.yaml` includes both the existing disk-based fallback and the R2 environment variable slots
+- Render is configured for `STORAGE_MODE=r2` in `render.yaml`, so set the R2 secrets before deploying
+- R2 mode keeps uploaded images and album metadata outside the app filesystem
+- local uploaded files and `data/album.json` are now ignored in git so gallery content stays out of the repository
 
