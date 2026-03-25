@@ -60,9 +60,10 @@ const DESCRIPTION_SECTION_REPLACEMENTS = [
 
 function buildConfig(overrides = {}) {
   const storageSettings = buildStorageSettings(overrides);
+  const defaultHost = process.env.HOST || (process.env.PORT ? "0.0.0.0" : "127.0.0.1");
 
   return {
-    host: overrides.host || process.env.HOST || "127.0.0.1",
+    host: overrides.host || defaultHost,
     port: overrides.port ?? Number(process.env.PORT || 3000),
     publicDir: overrides.publicDir || PUBLIC_DIR,
     uploadsDir: overrides.uploadsDir || UPLOADS_DIR,

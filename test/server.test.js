@@ -278,3 +278,33 @@ test("photo album supports remote-style storage adapters for album and image byt
   assert.equal(storage.hasAsset(uploadPayload.photo.filename), false);
   assert.equal(storage.getAlbum().length, 0);
 });
+
+test("deployed environments bind to 0.0.0.0 when PORT is set", async (t) => {
+  const previousPort = process.env.PORT;
+  const previousHost = process.env.HOST;
+
+  process.env.PORT = "10000";
+  delete process.env.HOST;
+
+  t.after(() => {
+    if (previousPort === undefined) {
+      delete process.env.PORT;
+    } else {
+      process.env.PORT = previousPort;
+    }
+
+    if (previousHost === undefined) {
+      delete process.env.HOST;
+    } else {
+      process.env.HOST = previousHost;
+    }
+  });
+
+  const { server, config } = createAlbumServer({
+    storage: createMemoryStorage(),
+    adminPassword: "secret-pass",
+  });
+
+  assert.equal(config.host, "0.0.0.0");
+  await new Promise((resolve) => server.close(resolve));
+});
