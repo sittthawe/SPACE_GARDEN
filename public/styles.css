@@ -109,6 +109,9 @@ textarea {
 
 .nav-link {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
   padding: 8px 0;
   border: 0;
   background: none;
@@ -130,6 +133,13 @@ textarea {
   bottom: -12px;
   height: 2px;
   background: var(--accent);
+}
+
+.nav-link-button {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .hero {
@@ -201,7 +211,9 @@ textarea {
 
 .hero-meta-item,
 .overview-card {
+  flex: 1 1 180px;
   min-width: 160px;
+  max-width: 100%;
   padding: 16px 18px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -278,8 +290,8 @@ textarea {
 }
 
 .gallery-grid {
-  column-count: 2;
-  column-gap: 38px;
+  column-width: 320px;
+  column-gap: clamp(20px, 3vw, 38px);
 }
 
 .gallery-card,
@@ -298,7 +310,7 @@ textarea {
 .gallery-card {
   display: inline-block;
   width: 100%;
-  margin: 0 0 38px;
+  margin: 0 0 clamp(20px, 3vw, 38px);
   break-inside: avoid;
   vertical-align: top;
 }
@@ -514,7 +526,7 @@ textarea {
 .login-layout,
 .admin-grid {
   display: grid;
-  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
   align-items: start;
   gap: 20px;
 }
@@ -532,6 +544,7 @@ textarea {
 }
 
 .panel-header {
+  flex-wrap: wrap;
   margin-bottom: 18px;
 }
 
@@ -554,6 +567,7 @@ textarea {
 .field input,
 .field textarea {
   width: 100%;
+  min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -641,7 +655,7 @@ textarea {
 
 .admin-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   align-items: start;
   gap: 16px;
 }
@@ -721,10 +735,10 @@ textarea {
 }
 
 .lightbox-card {
-  width: min(100%, 1080px);
+  width: min(100%, 1120px);
   max-height: calc(100vh - 44px);
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
   overflow: hidden;
   min-height: 0;
   margin: auto;
@@ -1135,6 +1149,65 @@ code {
 
   .lightbox-card img {
     max-height: 40vh;
+  }
+}
+@media (min-width: 1280px) {
+  .gallery-grid {
+    column-width: 360px;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero-meta-item,
+  .overview-card {
+    flex-basis: calc(50% - 8px);
+  }
+}
+
+@media (max-width: 620px) {
+  .hero-meta-item,
+  .overview-card {
+    flex-basis: 100%;
+  }
+
+  .gallery-badge-row {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+  }
+
+  .admin-photo-actions .button,
+  .admin-edit-actions .button {
+    flex: 1 1 100%;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 620px) {
+  .site-nav {
+    padding: 12px 0;
+    min-height: auto;
+  }
+
+  .hero,
+  .hero-studio {
+    padding: 22px 0 28px;
+  }
+
+  .hero-meta,
+  .admin-overview {
+    margin-top: 20px;
+  }
+
+  .lightbox {
+    place-items: start center;
+  }
+
+  .lightbox-card {
+    margin-top: 48px;
+  }
+
+  .lightbox-card img {
+    max-height: 42vh;
   }
 }
 
