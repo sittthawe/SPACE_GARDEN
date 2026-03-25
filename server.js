@@ -2,6 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { buildPhotoUrl, buildStorageSettings, createStorageAdapter } = require("./storage");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 const STORAGE_ROOT = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_DIR) : __dirname;
@@ -58,12 +59,16 @@ const DESCRIPTION_SECTION_REPLACEMENTS = [
 ];
 
 function buildConfig(overrides = {}) {
+  const storageSettings = buildStorageSettings(overrides);
+
   return {
     host: overrides.host || process.env.HOST || "127.0.0.1",
     port: overrides.port ?? Number(process.env.PORT || 3000),
     publicDir: overrides.publicDir || PUBLIC_DIR,
     uploadsDir: overrides.uploadsDir || UPLOADS_DIR,
     dataFile: overrides.dataFile || DATA_FILE,
+    storageMode: storageSettings.mode,
+    r2: storageSettings.r2,
     maxUploadBytes: overrides.maxUploadBytes || 15 * 1024 * 1024,
     sessionTtlMs: overrides.sessionTtlMs || 8 * 60 * 60 * 1000,
     adminPassword: overrides.adminPassword || process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD,
@@ -72,11 +77,13 @@ function buildConfig(overrides = {}) {
 
 function createAlbumServer(overrides = {}) {
   const config = buildConfig(overrides);
-  ensureStorage(config);
+  config.storage = createStorageAdapter(config, overrides);
+
   const sessions = new Map();
   const server = http.createServer((req, res) => {
     void handleRequest(req, res, config, sessions);
   });
+
   return { server, config, sessions };
 }
 
@@ -99,7 +106,7 @@ async function handleRequest(req, res, config, sessions) {
 
   try {
     if (req.method === "GET" && pathname === "/api/photos") {
-      return sendJson(res, 200, { photos: listPhotos(config) });
+      return sendJson(res, 200, { photos: await listPhotos(config) });
     }
 
     if (req.method === "GET" && pathname === "/api/admin/session") {
@@ -138,12 +145,12 @@ async function handleRequest(req, res, config, sessions) {
 
     if (req.method === "GET" && pathname.startsWith("/uploads/")) {
       const relativePath = pathname.replace("/uploads/", "");
-      return serveStaticAsset(res, config.uploadsDir, relativePath);
+      return serveUploadedAsset(res, config, relativePath);
     }
 
     if (req.method === "GET") {
       const relativePath = pathname.replace(/^\//, "");
-      return serveStaticAsset(res, config.publicDir, relativePath);
+      return servePublicAsset(res, config.publicDir, relativePath);
     }
 
     return sendJson(res, 404, { error: "Route not found." });
@@ -154,16 +161,6 @@ async function handleRequest(req, res, config, sessions) {
       console.error(error);
     }
     return sendJson(res, statusCode, { error: message });
-  }
-}
-
-function ensureStorage(config) {
-  fs.mkdirSync(config.publicDir, { recursive: true });
-  fs.mkdirSync(path.dirname(config.dataFile), { recursive: true });
-  fs.mkdirSync(config.uploadsDir, { recursive: true });
-
-  if (!fs.existsSync(config.dataFile)) {
-    fs.writeFileSync(config.dataFile, "[]\n", "utf8");
   }
 }
 
@@ -179,40 +176,34 @@ function applySecurityHeaders(res) {
   );
 }
 
-function listPhotos(config) {
-  return readAlbum(config).sort((left, right) => {
+async function listPhotos(config) {
+  const photos = await readAlbum(config);
+  return photos.sort((left, right) => {
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
   });
 }
 
-function readAlbum(config) {
-  try {
-    const raw = fs.readFileSync(config.dataFile, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    const normalizedPhotos = parsed.map((photo) => normalizePhotoRecord(photo));
-    const hasChanges = normalizedPhotos.some((photo, index) => {
-      return photo.title !== parsed[index]?.title || photo.description !== parsed[index]?.description;
-    });
-
-    if (hasChanges) {
-      writeAlbum(config, normalizedPhotos);
-    }
-
-    return normalizedPhotos;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
+async function readAlbum(config) {
+  const parsed = await config.storage.readAlbum();
+  if (!Array.isArray(parsed)) {
+    return [];
   }
+
+  const normalizedPhotos = parsed.map((photo) => normalizePhotoRecord(photo));
+  const hasChanges = normalizedPhotos.some((photo, index) => {
+    const current = parsed[index] || {};
+    return photo.title !== current.title || photo.description !== current.description || photo.url !== current.url || photo.filename !== current.filename;
+  });
+
+  if (hasChanges) {
+    await writeAlbum(config, normalizedPhotos);
+  }
+
+  return normalizedPhotos;
 }
 
-function writeAlbum(config, photos) {
-  fs.writeFileSync(config.dataFile, `${JSON.stringify(photos, null, 2)}\n`, "utf8");
+async function writeAlbum(config, photos) {
+  await config.storage.writeAlbum(photos);
 }
 
 async function handleAdminLogin(req, res, config, sessions) {
@@ -266,8 +257,7 @@ async function handlePhotoUpload(req, res, config, sessions) {
   }
 
   const storedFileName = `${Date.now()}-${crypto.randomUUID()}${pickExtension(file.filename, file.contentType)}`;
-  const photoPath = path.join(config.uploadsDir, storedFileName);
-  await fs.promises.writeFile(photoPath, file.data);
+  await config.storage.writeAsset(storedFileName, file);
 
   const title = sanitizeInlineText(fields.title, 120) || titleFromFilename(file.filename);
   const description = sanitizeDescriptionText(fields.description, 8000);
@@ -282,12 +272,12 @@ async function handlePhotoUpload(req, res, config, sessions) {
     mimeType: file.contentType,
     size: file.data.length,
     createdAt,
-    url: `/uploads/${storedFileName}`,
+    url: buildPhotoUrl(storedFileName),
   };
 
-  const photos = readAlbum(config);
+  const photos = await readAlbum(config);
   photos.unshift(photo);
-  writeAlbum(config, photos);
+  await writeAlbum(config, photos);
 
   return sendJson(res, 201, { photo });
 }
@@ -301,7 +291,7 @@ async function handlePhotoDelete(req, res, config, sessions, photoId) {
     return sendJson(res, 400, { error: "Missing photo id." });
   }
 
-  const photos = readAlbum(config);
+  const photos = await readAlbum(config);
   const photoIndex = photos.findIndex((photo) => photo.id === photoId);
 
   if (photoIndex === -1) {
@@ -309,14 +299,10 @@ async function handlePhotoDelete(req, res, config, sessions, photoId) {
   }
 
   const [photo] = photos.splice(photoIndex, 1);
-  writeAlbum(config, photos);
+  await writeAlbum(config, photos);
 
-  try {
-    await fs.promises.unlink(path.join(config.uploadsDir, photo.filename));
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      throw error;
-    }
+  if (photo.filename) {
+    await config.storage.deleteAsset(photo.filename);
   }
 
   return sendJson(res, 200, { deletedId: photo.id });
@@ -339,7 +325,7 @@ async function handlePhotoUpdate(req, res, config, sessions, photoId) {
     return sendJson(res, 400, { error: "Add a title or description to update." });
   }
 
-  const photos = readAlbum(config);
+  const photos = await readAlbum(config);
   const photoIndex = photos.findIndex((photo) => photo.id === photoId);
 
   if (photoIndex === -1) {
@@ -356,7 +342,7 @@ async function handlePhotoUpdate(req, res, config, sessions, photoId) {
   };
 
   photos[photoIndex] = updatedPhoto;
-  writeAlbum(config, photos);
+  await writeAlbum(config, photos);
 
   return sendJson(res, 200, { photo: updatedPhoto });
 }
@@ -604,17 +590,35 @@ function countMojibakeMarkers(value) {
 
 function normalizePhotoRecord(photo) {
   const source = photo && typeof photo === "object" ? photo : {};
+  const filename = normalizeStoredFilename(source.filename);
   const title = sanitizeInlineText(source.title, 120) || "Untitled photo";
   const description = sanitizeDescriptionText(source.description, 8000);
 
   return {
     ...source,
+    filename,
     title,
     description,
+    url: filename ? buildPhotoUrl(filename) : source.url || "",
   };
 }
 
-function serveStaticAsset(res, baseDir, relativePath) {
+async function serveUploadedAsset(res, config, relativePath) {
+  const asset = await config.storage.readAsset(relativePath);
+  if (!asset) {
+    return sendJson(res, 404, { error: "File not found." });
+  }
+
+  const body = Buffer.isBuffer(asset.data) ? asset.data : Buffer.from(asset.data || "");
+  res.writeHead(200, {
+    "Content-Type": asset.contentType || getContentType(relativePath),
+    "Content-Length": asset.contentLength || body.length,
+    ...(asset.cacheControl ? { "Cache-Control": asset.cacheControl } : {}),
+  });
+  res.end(body);
+}
+
+function servePublicAsset(res, baseDir, relativePath) {
   const filePath = safeResolve(baseDir, relativePath);
   if (!filePath) {
     return sendJson(res, 404, { error: "File not found." });
@@ -660,6 +664,19 @@ function getContentType(filePath) {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
+function normalizeStoredFilename(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join("/");
+}
+
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(statusCode, {
@@ -684,10 +701,3 @@ module.exports = {
   createAlbumServer,
   startServer,
 };
-
-
-
-
-
-
-

@@ -9,6 +9,48 @@ const { createAlbumServer } = require("../server");
 function toMojibake(value) {
   return Buffer.from(value, "utf8").toString("latin1");
 }
+
+function createMemoryStorage() {
+  const assets = new Map();
+  let album = [];
+
+  return {
+    mode: "r2",
+    async readAlbum() {
+      return JSON.parse(JSON.stringify(album));
+    },
+    async writeAlbum(photos) {
+      album = JSON.parse(JSON.stringify(photos));
+    },
+    async writeAsset(filename, file) {
+      assets.set(filename, {
+        data: Buffer.from(file.data),
+        contentType: file.contentType,
+        contentLength: file.data.length,
+        cacheControl: "public, max-age=31536000, immutable",
+      });
+    },
+    async deleteAsset(filename) {
+      assets.delete(filename);
+    },
+    async readAsset(filename) {
+      const asset = assets.get(filename);
+      return asset
+        ? {
+            ...asset,
+            data: Buffer.from(asset.data),
+          }
+        : null;
+    },
+    getAlbum() {
+      return JSON.parse(JSON.stringify(album));
+    },
+    hasAsset(filename) {
+      return assets.has(filename);
+    },
+  };
+}
+
 test("photo album API supports login, upload, edit, list, and delete", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-"));
   const uploadsDir = path.join(tempRoot, "uploads");
@@ -105,6 +147,7 @@ test("photo album API supports login, upload, edit, list, and delete", async (t)
   const finalPhotos = await fetch(`${baseUrl}/api/photos`).then((response) => response.json());
   assert.equal(finalPhotos.photos.length, 0);
 });
+
 test("photo album repairs mojibake prompt text from stored data", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-"));
   const uploadsDir = path.join(tempRoot, "uploads");
@@ -171,3 +214,67 @@ test("photo album repairs mojibake prompt text from stored data", async (t) => {
   assert.equal(savedAlbum[0].description, expectedDescription);
 });
 
+test("photo album supports remote-style storage adapters for album and image bytes", async (t) => {
+  const storage = createMemoryStorage();
+  const { server } = createAlbumServer({
+    host: "127.0.0.1",
+    port: 0,
+    storage,
+    adminPassword: "secret-pass",
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password: "secret-pass" }),
+  });
+  assert.equal(loginResponse.status, 200);
+
+  const cookie = (loginResponse.headers.get("set-cookie") || "").split(";")[0];
+  const form = new FormData();
+  form.set("title", "Remote storage");
+  form.set("description", "Stored outside the app filesystem");
+  form.set("photo", new Blob([Buffer.from([9, 8, 7, 6])], { type: "image/png" }), "remote.png");
+
+  const uploadResponse = await fetch(`${baseUrl}/api/admin/photos`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+    },
+    body: form,
+  });
+  assert.equal(uploadResponse.status, 201);
+
+  const uploadPayload = await uploadResponse.json();
+  assert.equal(uploadPayload.photo.url.startsWith("/uploads/"), true);
+  assert.equal(storage.hasAsset(uploadPayload.photo.filename), true);
+
+  const imageResponse = await fetch(`${baseUrl}${uploadPayload.photo.url}`);
+  assert.equal(imageResponse.status, 200);
+  assert.equal(imageResponse.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await imageResponse.arrayBuffer()), Buffer.from([9, 8, 7, 6]));
+
+  const storedAlbum = storage.getAlbum();
+  assert.equal(storedAlbum.length, 1);
+  assert.equal(storedAlbum[0].title, "Remote storage");
+
+  const deleteResponse = await fetch(`${baseUrl}/api/admin/photos/${uploadPayload.photo.id}`, {
+    method: "DELETE",
+    headers: {
+      Cookie: cookie,
+    },
+  });
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(storage.hasAsset(uploadPayload.photo.filename), false);
+  assert.equal(storage.getAlbum().length, 0);
+});

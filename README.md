@@ -7,7 +7,8 @@ A full-stack photo album app with:
 - public gallery page
 - admin login panel
 - image upload and delete actions
-- local disk storage for uploaded files
+- local disk storage by default
+- optional Cloudflare R2 storage for both images and album metadata
 
 ## Run it
 
@@ -41,11 +42,40 @@ If you do not set one, the app falls back to:
 RasDave26
 ```
 
-## Storage
+## Storage modes
+
+### Local mode (default)
+
+By default:
 
 - uploaded files go into `uploads/`
 - album metadata is stored in `data/album.json`
 - set `STORAGE_DIR` if you want uploads and album data stored somewhere else
+
+### Cloudflare R2 mode
+
+If these environment variables are present, the app switches to R2 automatically:
+
+```bash
+R2_ACCOUNT_ID=your-cloudflare-account-id
+R2_BUCKET=your-r2-bucket-name
+R2_ACCESS_KEY_ID=your-r2-access-key
+R2_SECRET_ACCESS_KEY=your-r2-secret-key
+```
+
+Optional R2 settings:
+
+```bash
+R2_ALBUM_KEY=album.json
+R2_UPLOAD_PREFIX=uploads
+```
+
+Notes:
+
+- when R2 mode is enabled, both uploaded images and album metadata are stored in R2
+- the app still serves images from `/uploads/...`, so your bucket does not need to be public
+- set `STORAGE_MODE=local` to force local disk mode even if R2 env vars exist
+- set `STORAGE_MODE=r2` to require R2 mode explicitly
 
 ## Test
 
@@ -57,19 +87,28 @@ npm test
 
 This app is ready to run on a Node host such as Render.
 
-Recommended environment variables:
+Recommended environment variables for an R2-backed deploy:
 
 ```bash
 ADMIN_PASSWORD=your-password
 HOST=0.0.0.0
 PORT=10000
+R2_ACCOUNT_ID=your-cloudflare-account-id
+R2_BUCKET=your-r2-bucket-name
+R2_ACCESS_KEY_ID=your-r2-access-key
+R2_SECRET_ACCESS_KEY=your-r2-secret-key
+R2_ALBUM_KEY=album.json
+R2_UPLOAD_PREFIX=uploads
+```
+
+If you stay on local-disk mode in production:
+
+```bash
 STORAGE_DIR=/opt/render/project/src/storage
 ```
 
 Important:
 
-- this app stores uploads on disk
-- on platforms with ephemeral storage, uploads are lost after restart or redeploy
-- for Render, attach a persistent disk and mount it under `/opt/render/project/src/storage`
-- the included `render.yaml` already configures that disk path for Render
-
+- R2 mode is the best option for stateless or low-cost hosting because uploads and album metadata survive restarts
+- local-disk mode still works, but uploads and metadata will be lost on hosts with ephemeral storage unless you attach a persistent disk
+- the included `render.yaml` includes both the existing disk-based fallback and the R2 environment variable slots

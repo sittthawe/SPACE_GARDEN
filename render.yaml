@@ -15,6 +15,18 @@ services:
         value: /opt/render/project/src/storage
       - key: ADMIN_PASSWORD
         sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_ALBUM_KEY
+        value: album.json
+      - key: R2_UPLOAD_PREFIX
+        value: uploads
     disk:
       name: media
       mountPath: /opt/render/project/src/storage
