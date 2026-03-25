@@ -2,7 +2,3 @@ node_modules/
 *.log
 .env
 storage/
-data/*.json
-!data/.gitkeep
-uploads/*
-!uploads/.gitkeep
