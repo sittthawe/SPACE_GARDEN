@@ -385,8 +385,10 @@ textarea {
 }
 
 .gallery-grid {
-  column-width: 320px;
-  column-gap: clamp(20px, 3vw, 38px);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  align-items: start;
+  gap: clamp(20px, 3vw, 38px);
 }
 
 .gallery-card,
@@ -403,11 +405,8 @@ textarea {
 }
 
 .gallery-card {
-  display: inline-block;
+  display: block;
   width: 100%;
-  margin: 0 0 clamp(20px, 3vw, 38px);
-  break-inside: avoid;
-  vertical-align: top;
 }
 
 .gallery-card:hover,
@@ -1231,7 +1230,8 @@ code {
   }
 
   .gallery-grid {
-    column-gap: 26px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 26px;
   }
 
   .admin-gallery {
@@ -1279,9 +1279,6 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .gallery-grid {
-    column-count: 1;
-  }
 
   .hero-title {
     font-size: clamp(3.3rem, 12vw, 5.4rem);
@@ -1309,6 +1306,10 @@ code {
 }
 
 @media (max-width: 620px) {
+  .gallery-grid {
+    grid-template-columns: 1fr;
+  }
+
   .site-shell {
     width: min(100vw - 20px, 100%);
     max-width: calc(100vw - 20px);
@@ -1525,7 +1526,7 @@ code {
 }
 @media (min-width: 1280px) {
   .gallery-grid {
-    column-width: 360px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
 }
 
