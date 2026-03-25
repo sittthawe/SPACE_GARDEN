@@ -97,10 +97,14 @@ function createLocalStorage(config) {
       }
 
       try {
-        const data = await fs.promises.readFile(filePath);
+        const stats = await fs.promises.stat(filePath);
+        if (!stats.isFile()) {
+          return null;
+        }
+
         return {
-          data,
-          contentLength: data.length,
+          stream: fs.createReadStream(filePath),
+          contentLength: stats.size,
         };
       } catch (error) {
         if (error.code === "ENOENT") {

@@ -114,6 +114,11 @@ test("photo album API supports login, upload, edit, list, and delete", async (t)
   const uploadPayload = await uploadResponse.json();
   assert.equal(uploadPayload.photo.title, "Golden hour");
 
+  const uploadedImageResponse = await fetch(`${baseUrl}${uploadPayload.photo.url}`);
+  assert.equal(uploadedImageResponse.status, 200);
+  assert.equal(uploadedImageResponse.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await uploadedImageResponse.arrayBuffer()), Buffer.from([1, 2, 3, 4]));
+
   const editResponse = await fetch(`${baseUrl}/api/admin/photos/${uploadPayload.photo.id}`, {
     method: "PATCH",
     headers: {

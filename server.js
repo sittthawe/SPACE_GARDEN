@@ -489,33 +489,37 @@ function parseMultipartForm(body, contentType) {
   }
 
   const boundary = boundaryMatch[1].trim().replace(/^"|"$/g, "");
-  const raw = body.toString("latin1");
-  const parts = raw.split(`--${boundary}`).slice(1, -1);
+  const boundaryBuffer = Buffer.from(`--${boundary}`, "latin1");
+  const partBoundaryBuffer = Buffer.from(`\r\n--${boundary}`, "latin1");
+  const headerSeparator = Buffer.from("\r\n\r\n", "latin1");
   const fields = {};
   const files = [];
+  let cursor = body.indexOf(boundaryBuffer);
 
-  for (const rawPart of parts) {
-    let part = rawPart;
+  while (cursor !== -1) {
+    let partStart = cursor + boundaryBuffer.length;
 
-    if (part.startsWith("\r\n")) {
-      part = part.slice(2);
+    if (body[partStart] === 0x2d && body[partStart + 1] === 0x2d) {
+      break;
     }
 
-    if (part.endsWith("\r\n")) {
-      part = part.slice(0, -2);
+    if (body[partStart] === 0x0d && body[partStart + 1] === 0x0a) {
+      partStart += 2;
     }
 
-    if (!part) {
-      continue;
-    }
-
-    const headerEnd = part.indexOf("\r\n\r\n");
+    const headerEnd = body.indexOf(headerSeparator, partStart);
     if (headerEnd === -1) {
-      continue;
+      break;
     }
 
-    const headerText = part.slice(0, headerEnd);
-    const bodyText = part.slice(headerEnd + 4);
+    const headerText = body.toString("latin1", partStart, headerEnd);
+    const bodyStart = headerEnd + headerSeparator.length;
+    const nextBoundaryIndex = body.indexOf(partBoundaryBuffer, bodyStart);
+    if (nextBoundaryIndex === -1) {
+      break;
+    }
+
+    const partBody = body.subarray(bodyStart, nextBoundaryIndex);
     const headers = {};
 
     for (const headerLine of headerText.split("\r\n")) {
@@ -542,11 +546,13 @@ function parseMultipartForm(body, contentType) {
         fieldName,
         filename: path.basename(fileNameMatch[1]),
         contentType: headers["content-type"] || "application/octet-stream",
-        data: Buffer.from(bodyText, "latin1"),
+        data: partBody,
       });
     } else {
-      fields[fieldName] = bodyText;
+      fields[fieldName] = partBody.toString("utf8");
     }
+
+    cursor = nextBoundaryIndex + 2;
   }
 
   return { fields, files };
@@ -652,6 +658,23 @@ async function serveUploadedAsset(res, config, relativePath) {
   const asset = await config.storage.readAsset(relativePath);
   if (!asset) {
     return sendJson(res, 404, { error: "File not found." });
+  }
+
+  if (asset.stream) {
+    res.writeHead(200, {
+      "Content-Type": asset.contentType || getContentType(relativePath),
+      "Content-Length": asset.contentLength || 0,
+      ...(asset.cacheControl ? { "Cache-Control": asset.cacheControl } : {}),
+    });
+    asset.stream.pipe(res);
+    asset.stream.on("error", () => {
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Unable to read the requested file." });
+      } else {
+        res.destroy();
+      }
+    });
+    return;
   }
 
   const body = Buffer.isBuffer(asset.data) ? asset.data : Buffer.from(asset.data || "");
