@@ -36,11 +36,7 @@ $env:ADMIN_PASSWORD="your-password"
 npm start
 ```
 
-If you do not set one, the app falls back to:
-
-```text
-RasDave26
-```
+If you do not set one, the app uses a built-in development default. For safety, always set `ADMIN_PASSWORD` in every environment.
 
 ## Storage modes
 
@@ -112,3 +108,4 @@ Important:
 - R2 mode is the best option for stateless or low-cost hosting because uploads and album metadata survive restarts
 - local-disk mode still works, but uploads and metadata will be lost on hosts with ephemeral storage unless you attach a persistent disk
 - the included `render.yaml` includes both the existing disk-based fallback and the R2 environment variable slots
+

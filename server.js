@@ -93,7 +93,7 @@ function startServer(overrides = {}) {
   server.listen(config.port, config.host, () => {
     console.log(`SPACEGARDEN is running at http://${config.host}:${config.port}`);
     if (config.adminPassword === DEFAULT_ADMIN_PASSWORD) {
-      console.log("Admin password is using the default value 'RasDave26'. Set ADMIN_PASSWORD before production use.");
+      console.log("Admin password is using the built-in default value. Set ADMIN_PASSWORD before production use.");
     }
   });
   return server;
@@ -702,3 +702,4 @@ module.exports = {
   createAlbumServer,
   startServer,
 };
+
