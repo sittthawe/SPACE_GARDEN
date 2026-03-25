@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #120d0e;
   --bg-elevated: #171112;
   --panel: #1a1314;
@@ -695,6 +695,8 @@ textarea {
   max-height: calc(100vh - 44px);
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  overflow: hidden;
+  min-height: 0;
 }
 
 .lightbox-card img {
@@ -706,6 +708,17 @@ textarea {
 
 .lightbox-meta {
   padding: 28px;
+  min-height: 0;
+  max-height: calc(100vh - 44px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+
+#lightbox-description {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .lightbox-close {
@@ -1023,3 +1036,5 @@ code {
     aspect-ratio: 4 / 3;
   }
 }
+
+

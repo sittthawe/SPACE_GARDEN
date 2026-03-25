@@ -1,4 +1,4 @@
-const loginPanel = document.getElementById("login-panel");
+﻿const loginPanel = document.getElementById("login-panel");
 const adminOverview = document.getElementById("admin-overview");
 const adminGrid = document.getElementById("admin-grid");
 const loginForm = document.getElementById("login-form");
@@ -292,7 +292,7 @@ function handlePreview() {
   uploadPreview.src = previewUrl;
   uploadPreviewShell.hidden = false;
   previewMeta.hidden = false;
-  previewName.textContent = `${file.name} • ${formatFileSize(file.size)}`;
+  previewName.textContent = `${file.name} - ${formatFileSize(file.size)}`;
 }
 
 function clearPreview() {
@@ -423,3 +423,4 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+

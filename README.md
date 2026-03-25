@@ -1,4 +1,4 @@
-# SPACEGARDEN
+﻿# SPACEGARDEN
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fsittthawe%2FSPACE_GARDEN)
 
@@ -38,7 +38,7 @@ npm start
 If you do not set one, the app falls back to:
 
 ```text
-admin123
+RasDave26
 ```
 
 ## Storage
@@ -72,3 +72,4 @@ Important:
 - on platforms with ephemeral storage, uploads are lost after restart or redeploy
 - for Render, attach a persistent disk and mount it under `/opt/render/project/src/storage`
 - the included `render.yaml` already configures that disk path for Render
+

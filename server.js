@@ -1,4 +1,4 @@
-const http = require("http");
+﻿const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -8,7 +8,7 @@ const STORAGE_ROOT = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_
 const UPLOADS_DIR = path.join(STORAGE_ROOT, "uploads");
 const DATA_DIR = path.join(STORAGE_ROOT, "data");
 const DATA_FILE = path.join(DATA_DIR, "album.json");
-const DEFAULT_ADMIN_PASSWORD = "admin123";
+const DEFAULT_ADMIN_PASSWORD = "RasDave26";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -33,6 +33,29 @@ const EXTENSIONS_BY_TYPE = {
 };
 
 const ALLOWED_IMAGE_TYPES = new Set(Object.keys(EXTENSIONS_BY_TYPE));
+const MOJIBAKE_MARKER = /[\u00C3\u00C2\u00E2\u00F0][\u0080-\u017F]/u;
+const DESCRIPTION_SECTION_REPLACEMENTS = [
+  {
+    pattern: /\s*(?:\u{1F3AF}\s*)?More Dark \/ Creepy Version\b\s*:?\s*/giu,
+    replacement: "\n\nMore dark / creepy version:\n",
+  },
+  {
+    pattern: /\s*(?:\u2699\uFE0F?\s*)?Optional Negative Prompt\b\s*:?\s*/giu,
+    replacement: "\n\nOptional negative prompt:\n",
+  },
+  {
+    pattern: /\s*(?:(?:\u{1F3AF}|\u{1F527}|\u{1F6AB})\s*)?(?<!Optional )Negative Prompt(?:\s*\(Important\))?\s*:?\s*/giu,
+    replacement: "\n\nNegative prompt:\n",
+  },
+  {
+    pattern: /\s*(?:\u{1F3AF}\s*)?Style Enhancer\b\s*:?\s*/giu,
+    replacement: "\n\nStyle notes:\n",
+  },
+  {
+    pattern: /\s*(?:\u{1F3A5}\s*)?Optional shot(?: on)?\b\s*:?\s*/giu,
+    replacement: "\n\nOptional shot:\n",
+  },
+];
 
 function buildConfig(overrides = {}) {
   return {
@@ -62,7 +85,7 @@ function startServer(overrides = {}) {
   server.listen(config.port, config.host, () => {
     console.log(`SPACEGARDEN is running at http://${config.host}:${config.port}`);
     if (config.adminPassword === DEFAULT_ADMIN_PASSWORD) {
-      console.log("Admin password is using the default value 'admin123'. Set ADMIN_PASSWORD before production use.");
+      console.log("Admin password is using the default value 'RasDave26'. Set ADMIN_PASSWORD before production use.");
     }
   });
   return server;
@@ -166,7 +189,20 @@ function readAlbum(config) {
   try {
     const raw = fs.readFileSync(config.dataFile, "utf8");
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    const normalizedPhotos = parsed.map((photo) => normalizePhotoRecord(photo));
+    const hasChanges = normalizedPhotos.some((photo, index) => {
+      return photo.title !== parsed[index]?.title || photo.description !== parsed[index]?.description;
+    });
+
+    if (hasChanges) {
+      writeAlbum(config, normalizedPhotos);
+    }
+
+    return normalizedPhotos;
   } catch (error) {
     if (error.code === "ENOENT") {
       return [];
@@ -233,8 +269,8 @@ async function handlePhotoUpload(req, res, config, sessions) {
   const photoPath = path.join(config.uploadsDir, storedFileName);
   await fs.promises.writeFile(photoPath, file.data);
 
-  const title = sanitizeText(fields.title, 120) || titleFromFilename(file.filename);
-  const description = sanitizeText(fields.description, 8000);
+  const title = sanitizeInlineText(fields.title, 120) || titleFromFilename(file.filename);
+  const description = sanitizeDescriptionText(fields.description, 8000);
   const createdAt = new Date().toISOString();
 
   const photo = {
@@ -311,8 +347,8 @@ async function handlePhotoUpdate(req, res, config, sessions, photoId) {
   }
 
   const currentPhoto = photos[photoIndex];
-  const nextTitle = hasTitle ? sanitizeText(body.title, 120) : currentPhoto.title;
-  const nextDescription = hasDescription ? sanitizeText(body.description, 8000) : currentPhoto.description;
+  const nextTitle = hasTitle ? sanitizeInlineText(body.title, 120) : currentPhoto.title;
+  const nextDescription = hasDescription ? sanitizeDescriptionText(body.description, 8000) : currentPhoto.description;
   const updatedPhoto = {
     ...currentPhoto,
     title: nextTitle || currentPhoto.title || "Untitled photo",
@@ -510,12 +546,72 @@ function titleFromFilename(filename) {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
-function sanitizeText(value, maxLength) {
+function sanitizeInlineText(value, maxLength) {
   if (typeof value !== "string") {
     return "";
   }
 
-  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+  return repairMojibake(value).replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function sanitizeDescriptionText(value, maxLength) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  let normalized = repairMojibake(value).replace(/\r\n?/g, "\n");
+
+  for (const { pattern, replacement } of DESCRIPTION_SECTION_REPLACEMENTS) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+
+  normalized = normalized.replace(/\s+--no\s+/giu, "\n\nNegative prompt:\nno ");
+  normalized = normalized
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line !== ":")
+    .filter((line, index, lines) => line || (index > 0 && lines[index - 1] !== ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return normalized.slice(0, maxLength);
+}
+
+function repairMojibake(value) {
+  let normalized = String(value ?? "");
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!MOJIBAKE_MARKER.test(normalized)) {
+      break;
+    }
+
+    const repaired = Buffer.from(normalized, "latin1").toString("utf8");
+    if (!repaired || repaired.includes("\uFFFD") || countMojibakeMarkers(repaired) >= countMojibakeMarkers(normalized)) {
+      break;
+    }
+
+    normalized = repaired;
+  }
+
+  return normalized;
+}
+
+function countMojibakeMarkers(value) {
+  const matches = String(value ?? "").match(/[\u00C3\u00C2\u00E2\u00F0][\u0080-\u017F]/gu);
+  return matches ? matches.length : 0;
+}
+
+function normalizePhotoRecord(photo) {
+  const source = photo && typeof photo === "object" ? photo : {};
+  const title = sanitizeInlineText(source.title, 120) || "Untitled photo";
+  const description = sanitizeDescriptionText(source.description, 8000);
+
+  return {
+    ...source,
+    title,
+    description,
+  };
 }
 
 function serveStaticAsset(res, baseDir, relativePath) {
@@ -588,3 +684,10 @@ module.exports = {
   createAlbumServer,
   startServer,
 };
+
+
+
+
+
+
+

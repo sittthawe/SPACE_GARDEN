@@ -1,4 +1,4 @@
-const galleryGrid = document.getElementById("gallery-grid");
+﻿const galleryGrid = document.getElementById("gallery-grid");
 const emptyState = document.getElementById("empty-state");
 const photoCount = document.getElementById("photo-count");
 const gallerySync = document.getElementById("gallery-sync");
@@ -131,7 +131,11 @@ function closeLightbox() {
 }
 
 function buildAlt(photo) {
-  return photo.description ? `${photo.title}. ${photo.description}` : photo.title;
+  if (!photo.description) {
+    return photo.title;
+  }
+
+  return `${photo.title}. ${String(photo.description).replace(/\s+/g, " ").trim()}`;
 }
 
 function buildExpandableDescription(text, threshold = 180) {
@@ -200,3 +204,4 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+

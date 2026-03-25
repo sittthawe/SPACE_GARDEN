@@ -1,4 +1,4 @@
-const test = require("node:test");
+﻿const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
@@ -6,6 +6,9 @@ const path = require("path");
 
 const { createAlbumServer } = require("../server");
 
+function toMojibake(value) {
+  return Buffer.from(value, "utf8").toString("latin1");
+}
 test("photo album API supports login, upload, edit, list, and delete", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-"));
   const uploadsDir = path.join(tempRoot, "uploads");
@@ -102,3 +105,69 @@ test("photo album API supports login, upload, edit, list, and delete", async (t)
   const finalPhotos = await fetch(`${baseUrl}/api/photos`).then((response) => response.json());
   assert.equal(finalPhotos.photos.length, 0);
 });
+test("photo album repairs mojibake prompt text from stored data", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-"));
+  const uploadsDir = path.join(tempRoot, "uploads");
+  const dataDir = path.join(tempRoot, "data");
+  const dataFile = path.join(dataDir, "album.json");
+  const expectedDescription = [
+    "A surreal biomechanical female humanoid in a clean studio composition",
+    "",
+    "More dark / creepy version:",
+    "black void eyes and chrome spikes",
+    "",
+    "Optional negative prompt:",
+    "blurry, low quality",
+  ].join("\n");
+
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(
+    dataFile,
+    `${JSON.stringify(
+      [
+        {
+          id: "seed-photo",
+          title: "Biomechanical Futuristic Cyberpunk",
+          description: toMojibake(
+            "A surreal biomechanical female humanoid in a clean studio composition 🎯 More Dark / Creepy Version black void eyes and chrome spikes ⚙️ Optional Negative Prompt blurry, low quality"
+          ),
+          filename: "seed.png",
+          originalFilename: "seed.png",
+          mimeType: "image/png",
+          size: 512,
+          createdAt: "2026-03-24T17:04:18.671Z",
+          url: "/uploads/seed.png",
+        },
+      ],
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const { server } = createAlbumServer({
+    host: "127.0.0.1",
+    port: 0,
+    uploadsDir,
+    dataFile,
+    adminPassword: "secret-pass",
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const photosPayload = await fetch(`${baseUrl}/api/photos`).then((response) => response.json());
+  assert.equal(photosPayload.photos.length, 1);
+  assert.equal(photosPayload.photos[0].description, expectedDescription);
+
+  const savedAlbum = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+  assert.equal(savedAlbum[0].description, expectedDescription);
+});
+
