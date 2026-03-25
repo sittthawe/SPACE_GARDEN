@@ -104,5 +104,6 @@ Important:
 - the included `render.yaml` mounts a persistent disk at `/opt/render/project/src/storage` and sets `STORAGE_DIR` there
 - if you do not set the R2 secrets, uploads stay on that disk and survive deploys and restarts
 - if you do set the R2 secrets, the app switches to R2 automatically and stores both images and album metadata outside the app filesystem
-- local uploaded files and `data/album.json` are now ignored in git so gallery content stays out of the repository
+- if you upload locally and want those images to appear on the deployed site, commit `uploads/` plus `data/album.json` and push them before deploying
+- you can publish local gallery changes with `npm run publish:gallery -- --push`
 
