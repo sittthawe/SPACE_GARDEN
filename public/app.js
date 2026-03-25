@@ -2,9 +2,6 @@ const galleryGrid = document.getElementById("gallery-grid");
 const emptyState = document.getElementById("empty-state");
 const photoCount = document.getElementById("photo-count");
 const gallerySync = document.getElementById("gallery-sync");
-const heroTotal = document.getElementById("hero-total");
-const heroLastUpload = document.getElementById("hero-last-upload");
-const heroStorage = document.getElementById("hero-storage");
 const lightbox = document.getElementById("lightbox");
 const lightboxMediaShell = document.getElementById("lightbox-media-shell");
 const lightboxMeta = lightbox.querySelector(".lightbox-meta");
@@ -68,12 +65,8 @@ async function loadPhotos() {
 }
 
 function updateHeroStats() {
-  const totalSize = photos.reduce((sum, photo) => sum + Number(photo.size || 0), 0);
   const newestPhoto = photos[0];
 
-  heroTotal.textContent = String(photos.length);
-  heroLastUpload.textContent = newestPhoto ? formatDate(newestPhoto.createdAt, "short") : "Waiting";
-  heroStorage.textContent = formatFileSize(totalSize);
   photoCount.textContent = `${photos.length} photo${photos.length === 1 ? "" : "s"} live`;
   gallerySync.textContent = newestPhoto ? `Updated ${formatDate(newestPhoto.createdAt, "compact")}` : "Ready to sync";
 }
