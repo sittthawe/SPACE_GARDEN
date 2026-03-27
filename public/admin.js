@@ -1,4 +1,4 @@
-﻿const loginPanel = document.getElementById("login-panel");
+const loginPanel = document.getElementById("login-panel");
 const adminOverview = document.getElementById("admin-overview");
 const adminGrid = document.getElementById("admin-grid");
 const loginForm = document.getElementById("login-form");
@@ -392,6 +392,7 @@ function formatDate(value, style = "long") {
       return new Intl.DateTimeFormat(undefined, {
         month: "short",
         day: "numeric",
+        year: "numeric",
       }).format(new Date(value));
     }
 
@@ -423,4 +424,6 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+
 

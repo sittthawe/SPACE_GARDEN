@@ -1,1 +1,46 @@
-[]
+[
+  {
+    "id": "09d0bad3-3135-4a6d-8437-eca18189e8a0",
+    "title": "Green Alien",
+    "description": "A small green alien with a smooth oversized head and large closed eyes, meditating in a calm lotus position, wearing a soft beige monk robe, sitting on a rocky moon surface. In the background, a massive Saturn-like planet with visible rings dominates the sky, with a distant futuristic city glowing faintly on the horizon. Deep space filled with stars. Soft cinematic lighting, gentle shadows, peaceful atmosphere, spiritual and serene mood. Ultra detailed skin texture, realistic fabric folds, shallow depth of field, 85mm lens, f/1.8, photorealistic, 8k, high dynamic range, volumetric lighting, sci-fi cinematic composition.\n🧠\n\nNegative prompt:\n(ပိုတူအောင်):\nblurry, low quality, extra limbs, deformed face, cartoonish, oversaturated, noise, bad anatomy, watermark, text, distorted eyes\nStyle Tips\nLighting → soft rim light + moonlight\nMood → calm, spiritual, minimal\nCamera → close medium shot\nColor tone → cool dark space + warm robe contrast",
+    "filename": "1774596105712-6873acfd-908b-4db7-8617-4c78dcb97640.png",
+    "originalFilename": "Gemini_Generated_Image_78ok5y78ok5y78ok.png",
+    "mimeType": "image/png",
+    "size": 2005918,
+    "createdAt": "2026-03-27T07:21:45.727Z",
+    "url": "/uploads/1774596105712-6873acfd-908b-4db7-8617-4c78dcb97640.png"
+  },
+  {
+    "id": "9ffa3426-07aa-4b54-98cb-9d3e07c25045",
+    "title": "Multiple Theatrical Mask",
+    "description": "A dark surreal portrait of a person wearing multiple cracked white theatrical masks, arranged closely around their head like different personalities emerging, the central figure holding their face with both hands in a tense emotional expression. All masks have hollow black eye sockets and distressed textures, symbolizing inner conflict and identity fragmentation. The subject wears a black coat, blending into the shadows.\nShot in black and white, high contrast lighting, dramatic shadows, cinematic composition, shallow depth of field, ultra-detailed textures, gritty and moody atmosphere.\nBackground is a rough concrete wall, slightly blurred. Focus on the central mask, sharp detail on hands and mask surface.\nStyle: psychological horror, fine art photography, minimalistic yet intense, eerie and haunting mood, 85mm lens, f/1.8, film grain, soft vignette, ultra realistic, 8k\n\nNegative prompt:\ncolor, bright lighting, smiling face, cartoon, low quality, blurry, extra limbs, deformed face, text, watermark",
+    "filename": "1774596067984-86934092-77a6-4513-95fd-69d67611f9b6.png",
+    "originalFilename": "Gemini_Generated_Image_7gp8ok7gp8ok7gp8.png",
+    "mimeType": "image/png",
+    "size": 2166998,
+    "createdAt": "2026-03-27T07:21:07.991Z",
+    "url": "/uploads/1774596067984-86934092-77a6-4513-95fd-69d67611f9b6.png"
+  },
+  {
+    "id": "47099676-982a-44cd-8c86-3e7ca587ce4c",
+    "title": "Red Cobra X Mechanical Keyboard",
+    "description": "A hyper-realistic king cobra coiled around a premium mechanical keyboard, studio shot with a pure black background. The cobra has glossy, ultra-detailed scales in deep crimson red with subtle gold highlights, reflecting light with a wet, polished texture. Its hood is slightly expanded, head raised confidently, eyes sharp and focused forward.\nThe mechanical keyboard is high-end, with metallic casing, visible switches, and detailed keycaps (custom artisan keycaps, RGB glow subtly illuminating underneath). The snake’s body wraps naturally across the keyboard, partially covering keys, creating a strong contrast between organic scales and engineered hardware.\nDramatic cinematic lighting from above and side, strong highlights on the snake scales and soft reflections on the keyboard surface. Ultra-detailed textures, macro photography style, shallow depth of field, sharp focus, 8K resolution, photorealistic, high contrast, dark moody atmosphere, luxury product photography style.\n\nNegative prompt:\nblurry, low quality, cartoon, CGI look, plastic texture, extra heads, deformed cobra, unrealistic lighting, oversaturated RGB, messy composition, watermark, text, logo\n(9:16)",
+    "filename": "1774595928718-a74504dc-40a2-44dc-868c-9149c4246f4e.png",
+    "originalFilename": "Gemini_Generated_Image_dmd9p9dmd9p9dmd9.png",
+    "mimeType": "image/png",
+    "size": 1807186,
+    "createdAt": "2026-03-27T07:18:48.723Z",
+    "url": "/uploads/1774595928718-a74504dc-40a2-44dc-868c-9149c4246f4e.png"
+  },
+  {
+    "id": "61a11697-9e62-4d68-b09b-65d749300b49",
+    "title": "Red Cobra X Mechanical Keyboard",
+    "description": "A hyper-realistic king cobra coiled around a premium mechanical keyboard, studio shot with a pure black background. The cobra has glossy, ultra-detailed scales in deep crimson red with subtle gold highlights, reflecting light with a wet, polished texture. Its hood is slightly expanded, head raised confidently, eyes sharp and focused forward.\nThe mechanical keyboard is high-end, with metallic casing, visible switches, and detailed keycaps (custom artisan keycaps, RGB glow subtly illuminating underneath). The snake’s body wraps naturally across the keyboard, partially covering keys, creating a strong contrast between organic scales and engineered hardware.\nDramatic cinematic lighting from above and side, strong highlights on the snake scales and soft reflections on the keyboard surface. Ultra-detailed textures, macro photography style, shallow depth of field, sharp focus, 8K resolution, photorealistic, high contrast, dark moody atmosphere, luxury product photography style.\n\nNegative prompt:\nblurry, low quality, cartoon, CGI look, plastic texture, extra heads, deformed cobra, unrealistic lighting, oversaturated RGB, messy composition, watermark, text, logo",
+    "filename": "1774595853733-dcbf5b9b-7f55-4b80-8618-0be5e844a26d.png",
+    "originalFilename": "red-cobra-x-mechanical-keyboard.png",
+    "mimeType": "image/png",
+    "size": 1920269,
+    "createdAt": "2026-03-27T07:17:33.740Z",
+    "url": "/uploads/1774595853733-dcbf5b9b-7f55-4b80-8618-0be5e844a26d.png"
+  }
+]

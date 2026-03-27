@@ -13,6 +13,7 @@ const lightboxClose = document.getElementById("lightbox-close");
 const lightboxPrev = document.getElementById("lightbox-prev");
 const lightboxNext = document.getElementById("lightbox-next");
 const lightboxCounter = document.getElementById("lightbox-counter");
+const lightboxActions = document.getElementById("lightbox-actions");
 
 let photos = [];
 let activeLightboxIndex = -1;
@@ -39,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   lightboxMediaShell.addEventListener("wheel", handleLightboxMediaWheel, { passive: false });
   lightboxMeta.addEventListener("wheel", handleLightboxTextWheel, { passive: false });
+  lightboxMeta.addEventListener("click", handleLightboxClick);
   lightboxMediaShell.addEventListener("touchstart", (event) => handleTouchStart(event, "media"), { passive: true });
   lightboxMediaShell.addEventListener("touchend", handleTouchEnd, { passive: true });
   lightboxMeta.addEventListener("touchstart", (event) => handleTouchStart(event, "text"), { passive: true });
@@ -67,7 +69,7 @@ async function loadPhotos() {
 function updateHeroStats() {
   const newestPhoto = photos[0];
 
-  photoCount.textContent = `${photos.length} photo${photos.length === 1 ? "" : "s"} live`;
+  photoCount.textContent = `${photos.length} Piece${photos.length === 1 ? "" : "s"}`;
   gallerySync.textContent = newestPhoto ? `Updated ${formatDate(newestPhoto.createdAt, "compact")}` : "Ready to sync";
 }
 
@@ -85,16 +87,16 @@ function renderGallery() {
         <article class="gallery-card" data-id="${photo.id}" data-index="${index}" style="animation-delay: ${Math.min(index * 55, 320)}ms">
           <div class="gallery-media">
             <img class="gallery-image" src="${escapeHtml(photo.url)}" alt="${escapeHtml(buildAlt(photo))}" loading="lazy" />
-            <div class="gallery-badge-row">
-              <span class="gallery-badge">${index === 0 ? "Newest" : formatDate(photo.createdAt, "compact")}</span>
-              <span class="gallery-badge gallery-badge-soft">${formatFileSize(photo.size)}</span>
-            </div>
           </div>
           <div class="gallery-meta">
             <div class="gallery-title-row">
               <h3>${escapeHtml(photo.title)}</h3>
             </div>
             ${buildExpandableDescription(photo.description || "Freshly added to the album.")}
+            <div class="gallery-actions">
+              ${buildGalleryActionButton("download", index, "Download", "download")}
+              ${buildGalleryActionButton("copy-description", index, "Copy description", "copy")}
+            </div>
             <div class="meta-row">
               <span>${formatDate(photo.createdAt, "long")}</span>
             </div>
@@ -105,7 +107,15 @@ function renderGallery() {
     .join("");
 }
 
-function handleGalleryClick(event) {
+async function handleGalleryClick(event) {
+  const actionButton = event.target.closest("[data-gallery-action]");
+  if (actionButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    await handleActionButtonClick(actionButton);
+    return;
+  }
+
   const toggle = event.target.closest(".description-toggle");
   if (toggle) {
     event.preventDefault();
@@ -133,6 +143,33 @@ function openLightbox(index) {
   document.body.style.overflow = "hidden";
 }
 
+async function handleLightboxClick(event) {
+  const actionButton = event.target.closest("[data-gallery-action]");
+  if (!actionButton) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  await handleActionButtonClick(actionButton);
+}
+
+async function handleActionButtonClick(actionButton) {
+  const index = Number(actionButton.dataset.index);
+  if (Number.isNaN(index)) {
+    return;
+  }
+
+  if (actionButton.dataset.galleryAction === "download") {
+    downloadPhoto(index);
+    return;
+  }
+
+  if (actionButton.dataset.galleryAction === "copy-description") {
+    await copyPhotoDescription(index, actionButton);
+  }
+}
+
 function renderLightbox() {
   const photo = photos[activeLightboxIndex];
   if (!photo) {
@@ -143,6 +180,10 @@ function renderLightbox() {
   lightboxImage.src = photo.url;
   lightboxImage.alt = buildAlt(photo);
   lightboxTitle.textContent = photo.title;
+  lightboxActions.innerHTML = `
+    ${buildGalleryActionButton("download", activeLightboxIndex, "Download", "download")}
+    ${buildGalleryActionButton("copy-description", activeLightboxIndex, "Copy description", "copy")}
+  `;
   lightboxDescription.textContent = photo.description || "No description was added for this image.";
   lightboxDate.textContent = formatDate(photo.createdAt, "long");
   lightboxCounter.textContent = `${activeLightboxIndex + 1} / ${photos.length}`;
@@ -321,6 +362,51 @@ function buildExpandableDescription(text, threshold = 180) {
   `;
 }
 
+function buildGalleryActionButton(action, index, label, icon) {
+  return `
+    <button
+      class="gallery-action-button"
+      type="button"
+      data-gallery-action="${action}"
+      data-index="${index}"
+      data-default-label="${escapeHtml(label)}"
+      data-default-icon="${escapeHtml(icon)}"
+      aria-label="${escapeHtml(label)}"
+      title="${escapeHtml(label)}"
+    >
+      ${buildGalleryActionIcon(icon)}
+      <span class="sr-only">${escapeHtml(label)}</span>
+    </button>
+  `;
+}
+
+function buildGalleryActionIcon(icon) {
+  if (icon === "download") {
+    return `
+      <svg class="gallery-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 4v10" />
+        <path d="m8.5 11.5 3.5 3.5 3.5-3.5" />
+        <path d="M5 18.5h14" />
+      </svg>
+    `;
+  }
+
+  if (icon === "check") {
+    return `
+      <svg class="gallery-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m5 12.5 4.5 4.5L19 7.5" />
+      </svg>
+    `;
+  }
+
+  return `
+    <svg class="gallery-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="9" y="9" width="10" height="10" rx="2" />
+      <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+    </svg>
+  `;
+}
+
 function openCardFromElement(element) {
   const card = element.closest(".gallery-card");
   if (!card) {
@@ -333,12 +419,134 @@ function openCardFromElement(element) {
   }
 }
 
+function downloadPhoto(index) {
+  const photo = photos[index];
+  if (!photo?.url) {
+    return;
+  }
+
+  const link = document.createElement("a");
+  link.href = photo.url;
+  link.download = buildDownloadFilename(photo);
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+async function copyPhotoDescription(index, button) {
+  const photo = photos[index];
+  if (!photo) {
+    return;
+  }
+
+  const description = String(photo.description || "").trim() || "No description was added for this image.";
+
+  try {
+    await writeClipboardText(description);
+    flashActionFeedback(button, "Copied", "check");
+  } catch (error) {
+    flashActionFeedback(button, "Copy failed", "copy", 2000);
+  }
+}
+
+async function writeClipboardText(text) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.append(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  const copied = document.execCommand("copy");
+  textarea.remove();
+
+  if (!copied) {
+    throw new Error("Clipboard copy failed.");
+  }
+}
+
+function flashActionFeedback(button, label, icon, duration = 1600) {
+  if (!button) {
+    return;
+  }
+
+  const originalLabel = button.dataset.defaultLabel || button.getAttribute("aria-label") || "";
+  const originalIcon = button.dataset.defaultIcon || "copy";
+  button.disabled = true;
+  setGalleryActionButtonContent(button, label, icon);
+
+  const existingTimer = Number(button.dataset.feedbackTimer || 0);
+  if (existingTimer) {
+    window.clearTimeout(existingTimer);
+  }
+
+  const timer = window.setTimeout(() => {
+    setGalleryActionButtonContent(button, originalLabel, originalIcon);
+    button.disabled = false;
+    button.dataset.feedbackTimer = "";
+  }, duration);
+
+  button.dataset.feedbackTimer = String(timer);
+}
+
+function setGalleryActionButtonContent(button, label, icon) {
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.innerHTML = `${buildGalleryActionIcon(icon)}<span class="sr-only">${escapeHtml(label)}</span>`;
+}
+
+function buildDownloadFilename(photo) {
+  const baseName = slugifyFilenamePart(photo.title || "spacegarden-image");
+  return `${baseName}${resolvePhotoExtension(photo)}`;
+}
+
+function slugifyFilenamePart(value) {
+  const normalized = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "spacegarden-image";
+}
+
+function resolvePhotoExtension(photo) {
+  try {
+    const pathname = new URL(photo.url, window.location.origin).pathname;
+    const match = pathname.match(/\.[a-z0-9]+$/i);
+    if (match) {
+      return match[0].toLowerCase();
+    }
+  } catch (error) {
+    // Fall through to mime type defaults.
+  }
+
+  const extensionsByMimeType = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/avif": ".avif",
+  };
+
+  return extensionsByMimeType[String(photo.mimeType || "").toLowerCase()] || ".jpg";
+}
+
 function formatDate(value, style = "long") {
   try {
     if (style === "compact") {
       return new Intl.DateTimeFormat(undefined, {
         month: "short",
         day: "numeric",
+        year: "numeric",
       }).format(new Date(value));
     }
 
@@ -356,16 +564,6 @@ function formatDate(value, style = "long") {
   }
 }
 
-function formatFileSize(bytes) {
-  const numeric = Number(bytes || 0);
-  if (numeric < 1024) {
-    return `${numeric} B`;
-  }
-  if (numeric < 1024 * 1024) {
-    return `${Math.round(numeric / 1024)} KB`;
-  }
-  return `${(numeric / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -375,6 +573,9 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+
+
 
 
 

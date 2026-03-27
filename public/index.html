@@ -1,16 +1,30 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SPACEGARDEN</title>
+    <title>SPACE</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="page page-home">
+    <div class="page-background page-background-home" aria-hidden="true">
+      <span class="page-background-veil"></span>
+      <span class="page-background-nebula page-background-nebula-1"></span>
+      <span class="page-background-nebula page-background-nebula-2"></span>
+      <span class="page-background-nebula page-background-nebula-3"></span>
+      <span class="page-background-ring page-background-ring-1"></span>
+      <span class="page-background-ring page-background-ring-2"></span>
+      <span class="page-background-ring page-background-ring-3"></span>
+      <span class="page-background-beam page-background-beam-1"></span>
+      <span class="page-background-beam page-background-beam-2"></span>
+      <span class="page-background-grid"></span>
+      <span class="page-background-stars"></span>
+    </div>
+
     <header class="hero-shell site-shell">
       <nav class="site-nav">
         <a class="brand-lockup" href="/">
-          <span class="brand">SPACEGARDEN</span>
+          <span class="brand" data-brand="KST">KST</span>
         </a>
         <div class="nav-links">
           <a class="nav-link is-active" href="/">Gallery</a>
@@ -20,7 +34,7 @@
 
       <section class="hero hero-centered">
         <p class="eyebrow">Curated digital gallery</p>
-        <h1 class="hero-title">SPACEGARDEN</h1>
+        <h1 class="hero-title">SPACE</h1>
         <p class="hero-subtitle">
           AI-crafted imagery born from imagination where generative intelligence meets artistic vision. Every piece is an original
           visual creation.
@@ -38,22 +52,29 @@
       <section class="gallery-grid" id="gallery-grid" aria-live="polite"></section>
 
       <section class="empty-state" id="empty-state" hidden>
-        <div class="empty-state-card">
-          <p class="section-kicker">No photos yet</p>
-          <h2>The gallery is ready for its first image.</h2>
-          <p>Open Studio, upload a photo, and it will appear here automatically.</p>
-          <a class="button button-primary" href="/admin">Open Studio</a>
+        <div class="empty-state-card empty-state-card-coming-soon">
+          <div class="coming-soon-visual" aria-hidden="true">
+            <span class="coming-soon-orbit coming-soon-orbit-outer"></span>
+            <span class="coming-soon-orbit coming-soon-orbit-middle"></span>
+            <span class="coming-soon-orbit coming-soon-orbit-inner"></span>
+            <span class="coming-soon-spark coming-soon-spark-1"></span>
+            <span class="coming-soon-spark coming-soon-spark-2"></span>
+            <span class="coming-soon-spark coming-soon-spark-3"></span>
+            <div class="coming-soon-core">
+              <strong>Coming Soon</strong>
+            </div>
+          </div>
         </div>
       </section>
     </main>
 
     <footer class="site-footer site-shell">
-      <div class="footer-mark" aria-label="SPACEGARDEN copyright">
+      <div class="footer-mark" aria-label="SPACE copyright">
         <svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M4.5 8.5h4l1.3-2h4.4l1.3 2h4a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17V10a1.5 1.5 0 0 1 1.5-1.5Z" />
           <circle cx="12" cy="13.5" r="3.2" />
         </svg>
-        <p class="footer-copy">&copy; 2026 SPACEGARDEN</p>
+        <p class="footer-copy">&copy; 2026 SPACE</p>
       </div>
     </footer>
 
@@ -64,17 +85,24 @@
       <div class="lightbox-card">
         <div class="lightbox-media-shell" id="lightbox-media-shell">
           <button class="lightbox-nav lightbox-nav-prev" id="lightbox-prev" type="button" aria-label="Previous image">
-            Prev
+            <svg class="lightbox-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m14.5 5-7 7 7 7" />
+            </svg>
+            <span class="sr-only">Previous image</span>
           </button>
           <img id="lightbox-image" alt="" />
           <button class="lightbox-nav lightbox-nav-next" id="lightbox-next" type="button" aria-label="Next image">
-            Next
+            <svg class="lightbox-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m9.5 5 7 7-7 7" />
+            </svg>
+            <span class="sr-only">Next image</span>
           </button>
           <span class="lightbox-counter" id="lightbox-counter"></span>
         </div>
         <div class="lightbox-meta">
           <p class="section-kicker" id="lightbox-date"></p>
           <h3 id="lightbox-title"></h3>
+          <div class="gallery-actions lightbox-actions" id="lightbox-actions"></div>
           <p id="lightbox-description"></p>
         </div>
       </div>
@@ -83,4 +111,11 @@
     <script src="/app.js" defer></script>
   </body>
 </html>
+
+
+
+
+
+
+
 
