@@ -7,6 +7,7 @@ const { buildPhotoUrl, buildStorageSettings, createStorageAdapter } = require(".
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DEFAULT_ADMIN_PASSWORD = "RasDave26";
 const DEFAULT_RENDER_STORAGE_DIR = path.join(process.cwd(), "storage");
+const DEFAULT_RENDER_REPLICA_STORAGE_DIRS = ["/var/data"];
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -61,6 +62,7 @@ function buildConfig(overrides = {}) {
   const resolvedStorage = resolveStoragePaths(overrides);
   const uploadsDir = overrides.uploadsDir || path.join(resolvedStorage.storageRoot, "uploads");
   const dataFile = overrides.dataFile || path.join(resolvedStorage.storageRoot, "data", "album.json");
+  const replicaStorageRoots = resolvedStorage.replicaStorageRoots || [];
   const useImplicitLegacyFallback = !overrides.uploadsDir && !overrides.dataFile;
 
   return {
@@ -71,6 +73,9 @@ function buildConfig(overrides = {}) {
     storageRootSource: resolvedStorage.source,
     uploadsDir,
     dataFile,
+    replicaStorageRoots,
+    replicaUploadsDirs: replicaStorageRoots.map((root) => path.join(root, "uploads")),
+    replicaDataFiles: replicaStorageRoots.map((root) => path.join(root, "data", "album.json")),
     legacyUploadsDir:
       overrides.legacyUploadsDir ||
       (useImplicitLegacyFallback ? path.join(resolvedStorage.legacyStorageRoot, "uploads") : uploadsDir),
@@ -103,8 +108,18 @@ function startServer(overrides = {}) {
     console.log(`SPACEGARDEN is running at http://${config.host}:${config.port}`);
     if (config.storageMode === "local") {
       console.log(`Local uploads are stored at ${config.storageRoot}`);
+      if (config.replicaStorageRoots.length > 0) {
+        console.log(`Additional local storage roots detected: ${config.replicaStorageRoots.join(", ")}`);
+      }
       if (String(process.env.RENDER || "").toLowerCase() === "true") {
-        console.log(`On Render, attach a persistent disk at ${config.storageRoot} to keep uploads across deploys.`);
+        if (config.storageRootSource === "explicit") {
+          console.log(`Render persistence is using STORAGE_DIR=${config.storageRoot}.`);
+        } else {
+          const durableRoots = [config.storageRoot, ...config.replicaStorageRoots];
+          console.log(
+            `On Render, attach a persistent disk at ${durableRoots.join(" or ")} or set STORAGE_DIR to your disk path to keep uploads across deploys.`
+          );
+        }
       }
     } else if (config.storageMode === "r2") {
       console.log("Using Cloudflare R2 for image and album storage.");
@@ -118,20 +133,23 @@ function startServer(overrides = {}) {
 
 function resolveStoragePaths(overrides = {}) {
   const legacyStorageRoot = path.resolve(overrides.legacyStorageDir || __dirname);
+  const renderDefaultStorageRoot = path.resolve(overrides.renderDefaultStorageDir || DEFAULT_RENDER_STORAGE_DIR);
   const explicitStorageDir = overrides.storageDir || process.env.STORAGE_DIR;
 
   if (explicitStorageDir) {
     return {
       storageRoot: path.resolve(explicitStorageDir),
       legacyStorageRoot,
+      replicaStorageRoots: [],
       source: "explicit",
     };
   }
 
   if (String(process.env.RENDER || "").toLowerCase() === "true") {
     return {
-      storageRoot: DEFAULT_RENDER_STORAGE_DIR,
+      storageRoot: renderDefaultStorageRoot,
       legacyStorageRoot,
+      replicaStorageRoots: resolveRenderReplicaStorageRoots(overrides, renderDefaultStorageRoot, legacyStorageRoot),
       source: "render-default",
     };
   }
@@ -139,8 +157,35 @@ function resolveStoragePaths(overrides = {}) {
   return {
     storageRoot: legacyStorageRoot,
     legacyStorageRoot,
+    replicaStorageRoots: [],
     source: "legacy-default",
   };
+}
+
+function resolveRenderReplicaStorageRoots(overrides, storageRoot, legacyStorageRoot) {
+  const configuredRoots =
+    overrides.renderReplicaStorageDirs ||
+    process.env.RENDER_REPLICA_STORAGE_DIRS?.split(path.delimiter) ||
+    DEFAULT_RENDER_REPLICA_STORAGE_DIRS;
+
+  return configuredRoots
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry))
+    .filter((entry, index, values) => values.findIndex((candidate) => pathsMatch(candidate, entry)) === index)
+    .filter((entry) => !pathsMatch(entry, storageRoot) && !pathsMatch(entry, legacyStorageRoot))
+    .filter((entry) => fs.existsSync(entry));
+}
+
+function pathsMatch(left, right) {
+  const resolvedLeft = path.resolve(left);
+  const resolvedRight = path.resolve(right);
+
+  if (process.platform === "win32") {
+    return resolvedLeft.toLowerCase() === resolvedRight.toLowerCase();
+  }
+
+  return resolvedLeft === resolvedRight;
 }
 
 async function handleRequest(req, res, config, sessions) {

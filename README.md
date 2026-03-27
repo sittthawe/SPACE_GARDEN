@@ -49,6 +49,7 @@ By default:
 - set `STORAGE_DIR` if you want uploads and album data stored somewhere else
 - local mode is best for development, not for production deploys
 - on Render, use a persistent disk mount for `STORAGE_DIR` so uploads survive deploys and restarts
+- if `STORAGE_DIR` is not set, the app defaults to `./storage` on Render and also mirrors uploads to `/var/data` when that disk path exists
 
 ### Cloudflare R2 mode
 
@@ -103,6 +104,7 @@ Important:
 
 - the included `render.yaml` mounts a persistent disk at `/opt/render/project/src/storage` and sets `STORAGE_DIR` there
 - if you do not set the R2 secrets, uploads stay on that disk and survive deploys and restarts
+- if you created the Render service manually instead of from the Blueprint, make sure the disk mount path matches `STORAGE_DIR` exactly, such as `/opt/render/project/src/storage` or `/var/data`
 - if you do set the R2 secrets, the app switches to R2 automatically and stores both images and album metadata outside the app filesystem
 - if you upload locally and want those images to appear on the deployed site, commit `uploads/` plus `data/album.json` and push them before deploying
 - you can publish local gallery changes with `npm run publish:gallery -- --push`

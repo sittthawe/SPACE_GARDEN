@@ -54,6 +54,101 @@ test("Render defaults local storage into ./storage when STORAGE_DIR is not set",
   await new Promise((resolve) => server.close(resolve));
 });
 
+test("Render mirrors local uploads into an attached fallback disk and restores them after restart", async (t) => {
+  const previousRender = process.env.RENDER;
+  const previousStorageDir = process.env.STORAGE_DIR;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-render-"));
+  const ephemeralRoot = path.join(tempRoot, "ephemeral-storage");
+  const fallbackRoot = path.join(tempRoot, "persistent-disk");
+  const legacyRoot = path.join(tempRoot, "legacy-empty");
+
+  process.env.RENDER = "true";
+  delete process.env.STORAGE_DIR;
+
+  fs.mkdirSync(fallbackRoot, { recursive: true });
+
+  async function startTestServer() {
+    const { server } = createAlbumServer({
+      host: "127.0.0.1",
+      port: 0,
+      renderDefaultStorageDir: ephemeralRoot,
+      renderReplicaStorageDirs: [fallbackRoot],
+      legacyStorageDir: legacyRoot,
+      adminPassword: "secret-pass",
+    });
+
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return server;
+  }
+
+  let activeServer = await startTestServer();
+  let port = activeServer.address().port;
+  let baseUrl = `http://127.0.0.1:${port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => activeServer.close(resolve));
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+
+    if (previousRender === undefined) {
+      delete process.env.RENDER;
+    } else {
+      process.env.RENDER = previousRender;
+    }
+
+    if (previousStorageDir === undefined) {
+      delete process.env.STORAGE_DIR;
+    } else {
+      process.env.STORAGE_DIR = previousStorageDir;
+    }
+  });
+
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password: "secret-pass" }),
+  });
+  assert.equal(loginResponse.status, 200);
+
+  const cookie = (loginResponse.headers.get("set-cookie") || "").split(";")[0];
+  const form = new FormData();
+  form.set("title", "Disk-backed upload");
+  form.set("description", "Mirrored into a Render persistent disk");
+  form.set("photo", new Blob([Buffer.from([3, 1, 4, 1, 5])], { type: "image/png" }), "disk-backed.png");
+
+  const uploadResponse = await fetch(`${baseUrl}/api/admin/photos`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+    },
+    body: form,
+  });
+  assert.equal(uploadResponse.status, 201);
+
+  const uploadPayload = await uploadResponse.json();
+  const mirroredAssetPath = path.join(fallbackRoot, "uploads", uploadPayload.photo.filename);
+  const mirroredAlbumPath = path.join(fallbackRoot, "data", "album.json");
+  assert.equal(fs.existsSync(mirroredAssetPath), true);
+  assert.equal(fs.existsSync(mirroredAlbumPath), true);
+
+  await new Promise((resolve) => activeServer.close(resolve));
+  fs.rmSync(ephemeralRoot, { recursive: true, force: true });
+
+  activeServer = await startTestServer();
+  port = activeServer.address().port;
+  baseUrl = `http://127.0.0.1:${port}`;
+
+  const photosPayload = await fetch(`${baseUrl}/api/photos`).then((response) => response.json());
+  assert.equal(photosPayload.photos.length, 1);
+  assert.equal(photosPayload.photos[0].title, "Disk-backed upload");
+  assert.equal(photosPayload.photos[0].filename, uploadPayload.photo.filename);
+
+  const imageResponse = await fetch(`${baseUrl}${uploadPayload.photo.url}`);
+  assert.equal(imageResponse.status, 200);
+  assert.deepEqual(Buffer.from(await imageResponse.arrayBuffer()), Buffer.from([3, 1, 4, 1, 5]));
+});
+
 test("local storage migrates legacy album data into a configured persistent directory", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-"));
   const legacyRoot = path.join(tempRoot, "legacy");
@@ -123,12 +218,14 @@ test("local storage migrates legacy album data into a configured persistent dire
 test("local storage keeps uploaded photos across server restarts when reusing the same storage directory", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "spacegarden-"));
   const storageRoot = path.join(tempRoot, "persistent");
+  const legacyRoot = path.join(tempRoot, "legacy-empty");
 
   async function startTestServer() {
     const { server } = createAlbumServer({
       host: "127.0.0.1",
       port: 0,
       storageDir: storageRoot,
+      legacyStorageDir: legacyRoot,
       adminPassword: "secret-pass",
     });
 

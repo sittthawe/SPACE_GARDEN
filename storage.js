@@ -60,13 +60,15 @@ function createLocalStorage(config) {
         return Array.isArray(parsed) ? parsed : [];
       } catch (error) {
         if (error.code === "ENOENT") {
-          return [];
+          return readFirstAvailableAlbum(config);
         }
         throw error;
       }
     },
     async writeAlbum(photos) {
-      await fs.promises.writeFile(config.dataFile, `${JSON.stringify(photos, null, 2)}\n`, "utf8");
+      const serialized = `${JSON.stringify(photos, null, 2)}\n`;
+      await fs.promises.writeFile(config.dataFile, serialized, "utf8");
+      await mirrorAlbumWrites(config, serialized);
     },
     async writeAsset(filename, file) {
       const filePath = resolveLocalUploadPath(config.uploadsDir, filename);
@@ -75,43 +77,21 @@ function createLocalStorage(config) {
       }
 
       await fs.promises.writeFile(filePath, file.data);
+      await mirrorAssetWrites(config, filename, file.data);
     },
     async deleteAsset(filename) {
-      const filePath = resolveLocalUploadPath(config.uploadsDir, filename);
-      if (!filePath) {
-        return;
-      }
-
-      try {
-        await fs.promises.unlink(filePath);
-      } catch (error) {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
-      }
+      await deleteLocalAsset(config.uploadsDir, filename, true);
+      await mirrorAssetDeletes(config, filename);
     },
     async readAsset(filename) {
-      const filePath = resolveLocalUploadPath(config.uploadsDir, filename);
-      if (!filePath) {
-        return null;
+      for (const uploadsDir of [config.uploadsDir, ...getReplicaUploadDirs(config)]) {
+        const asset = await readLocalAssetFromDirectory(uploadsDir, filename);
+        if (asset) {
+          return asset;
+        }
       }
 
-      try {
-        const stats = await fs.promises.stat(filePath);
-        if (!stats.isFile()) {
-          return null;
-        }
-
-        return {
-          stream: fs.createReadStream(filePath),
-          contentLength: stats.size,
-        };
-      } catch (error) {
-        if (error.code === "ENOENT") {
-          return null;
-        }
-        throw error;
-      }
+      return null;
     },
   };
 }
@@ -120,6 +100,7 @@ function initializeLocalStorage(config) {
   fs.mkdirSync(config.publicDir, { recursive: true });
   fs.mkdirSync(path.dirname(config.dataFile), { recursive: true });
   fs.mkdirSync(config.uploadsDir, { recursive: true });
+  ensureReplicaDirectories(config);
 
   migrateLegacyAlbum(config);
   migrateLegacyUploads(config);
@@ -130,27 +111,38 @@ function initializeLocalStorage(config) {
 }
 
 function migrateLegacyAlbum(config) {
-  if (!config.legacyDataFile || pathsMatch(config.legacyDataFile, config.dataFile)) {
+  if (fs.existsSync(config.dataFile)) {
     return;
   }
 
-  if (fs.existsSync(config.dataFile) || !fs.existsSync(config.legacyDataFile)) {
+  for (const sourceFile of getAlbumMigrationSources(config)) {
+    if (!fs.existsSync(sourceFile)) {
+      continue;
+    }
+
+    fs.copyFileSync(sourceFile, config.dataFile);
     return;
   }
-
-  fs.copyFileSync(config.legacyDataFile, config.dataFile);
 }
 
 function migrateLegacyUploads(config) {
-  if (!config.legacyUploadsDir || pathsMatch(config.legacyUploadsDir, config.uploadsDir)) {
-    return;
+  for (const sourceDir of getUploadMigrationSources(config)) {
+    if (!fs.existsSync(sourceDir)) {
+      continue;
+    }
+
+    copyDirectoryContents(sourceDir, config.uploadsDir);
+  }
+}
+
+function ensureReplicaDirectories(config) {
+  for (const dataFile of getReplicaDataFiles(config)) {
+    fs.mkdirSync(path.dirname(dataFile), { recursive: true });
   }
 
-  if (!fs.existsSync(config.legacyUploadsDir)) {
-    return;
+  for (const uploadsDir of getReplicaUploadDirs(config)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
   }
-
-  copyDirectoryContents(config.legacyUploadsDir, config.uploadsDir);
 }
 
 function copyDirectoryContents(sourceDir, destinationDir) {
@@ -171,6 +163,126 @@ function copyDirectoryContents(sourceDir, destinationDir) {
 
     fs.copyFileSync(sourcePath, destinationPath);
   }
+}
+
+async function readFirstAvailableAlbum(config) {
+  for (const dataFile of getReplicaDataFiles(config)) {
+    try {
+      const raw = await fs.promises.readFile(dataFile, "utf8");
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return [];
+}
+
+async function mirrorAlbumWrites(config, serialized) {
+  for (const dataFile of getReplicaDataFiles(config)) {
+    await mirrorWrite(() => fs.promises.writeFile(dataFile, serialized, "utf8"), `album metadata to ${dataFile}`);
+  }
+}
+
+async function mirrorAssetWrites(config, filename, data) {
+  for (const uploadsDir of getReplicaUploadDirs(config)) {
+    const filePath = resolveLocalUploadPath(uploadsDir, filename);
+    if (!filePath) {
+      continue;
+    }
+
+    await mirrorWrite(() => fs.promises.writeFile(filePath, data), `upload asset to ${filePath}`);
+  }
+}
+
+async function mirrorAssetDeletes(config, filename) {
+  for (const uploadsDir of getReplicaUploadDirs(config)) {
+    await deleteLocalAsset(uploadsDir, filename, false);
+  }
+}
+
+async function deleteLocalAsset(baseDir, filename, strict) {
+  const filePath = resolveLocalUploadPath(baseDir, filename);
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+
+    if (strict) {
+      throw error;
+    }
+
+    console.warn(`Unable to remove mirrored upload at ${filePath}: ${error.message}`);
+  }
+}
+
+async function readLocalAssetFromDirectory(baseDir, filename) {
+  const filePath = resolveLocalUploadPath(baseDir, filename);
+  if (!filePath) {
+    return null;
+  }
+
+  try {
+    const stats = await fs.promises.stat(filePath);
+    if (!stats.isFile()) {
+      return null;
+    }
+
+    return {
+      stream: fs.createReadStream(filePath),
+      contentLength: stats.size,
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function mirrorWrite(writeOperation, label) {
+  try {
+    await writeOperation();
+  } catch (error) {
+    console.warn(`Unable to mirror ${label}: ${error.message}`);
+  }
+}
+
+function getReplicaDataFiles(config) {
+  return uniquePaths(config.replicaDataFiles || []);
+}
+
+function getReplicaUploadDirs(config) {
+  return uniquePaths(config.replicaUploadsDirs || []);
+}
+
+function getAlbumMigrationSources(config) {
+  return uniquePaths([...(config.replicaDataFiles || []), config.legacyDataFile]).filter(
+    (entry) => entry && !pathsMatch(entry, config.dataFile)
+  );
+}
+
+function getUploadMigrationSources(config) {
+  return uniquePaths([...(config.replicaUploadsDirs || []), config.legacyUploadsDir]).filter(
+    (entry) => entry && !pathsMatch(entry, config.uploadsDir)
+  );
+}
+
+function uniquePaths(paths) {
+  return paths
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry))
+    .filter((entry, index, values) => values.findIndex((candidate) => pathsMatch(candidate, entry)) === index);
 }
 
 function pathsMatch(left, right) {
