@@ -2,7 +2,8 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { buildPhotoUrl, buildStorageSettings, createStorageAdapter } = require("./storage");
+const { createPhotoDatabase } = require("./database");
+const { buildStorageSettings, createStorageAdapter } = require("./storage");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DEFAULT_ADMIN_PASSWORD = "RasDave26";
@@ -32,29 +33,6 @@ const EXTENSIONS_BY_TYPE = {
 };
 
 const ALLOWED_IMAGE_TYPES = new Set(Object.keys(EXTENSIONS_BY_TYPE));
-const MOJIBAKE_MARKER = /[\u00C3\u00C2\u00E2\u00F0][\u0080-\u017F]/u;
-const DESCRIPTION_SECTION_REPLACEMENTS = [
-  {
-    pattern: /\s*(?:\u{1F3AF}\s*)?More Dark \/ Creepy Version\b\s*:?\s*/giu,
-    replacement: "\n\nMore dark / creepy version:\n",
-  },
-  {
-    pattern: /\s*(?:\u2699\uFE0F?\s*)?Optional Negative Prompt\b\s*:?\s*/giu,
-    replacement: "\n\nOptional negative prompt:\n",
-  },
-  {
-    pattern: /\s*(?:(?:\u{1F3AF}|\u{1F527}|\u{1F6AB})\s*)?(?<!Optional )Negative Prompt(?:\s*\(Important\))?\s*:?\s*/giu,
-    replacement: "\n\nNegative prompt:\n",
-  },
-  {
-    pattern: /\s*(?:\u{1F3AF}\s*)?Style Enhancer\b\s*:?\s*/giu,
-    replacement: "\n\nStyle notes:\n",
-  },
-  {
-    pattern: /\s*(?:\u{1F3A5}\s*)?Optional shot(?: on)?\b\s*:?\s*/giu,
-    replacement: "\n\nOptional shot:\n",
-  },
-];
 
 function buildConfig(overrides = {}) {
   const storageSettings = buildStorageSettings(overrides);
@@ -93,6 +71,7 @@ function buildConfig(overrides = {}) {
 function createAlbumServer(overrides = {}) {
   const config = buildConfig(overrides);
   config.storage = createStorageAdapter(config, overrides);
+  config.database = createPhotoDatabase(config.storage);
 
   const sessions = new Map();
   const server = http.createServer((req, res) => {
@@ -196,7 +175,16 @@ async function handleRequest(req, res, config, sessions) {
 
   try {
     if (req.method === "GET" && pathname === "/api/photos") {
-      return sendJson(res, 200, { photos: await listPhotos(config) });
+      return sendJson(res, 200, { photos: await config.database.listPhotos() });
+    }
+
+    if (req.method === "GET" && pathname === "/api/system") {
+      return sendJson(res, 200, {
+        backend: {
+          runtime: "node-http",
+        },
+        database: config.database.describe(),
+      });
     }
 
     if (req.method === "GET" && pathname === "/api/admin/session") {
@@ -266,36 +254,6 @@ function applySecurityHeaders(res) {
   );
 }
 
-async function listPhotos(config) {
-  const photos = await readAlbum(config);
-  return photos.sort((left, right) => {
-    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-  });
-}
-
-async function readAlbum(config) {
-  const parsed = await config.storage.readAlbum();
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-
-  const normalizedPhotos = parsed.map((photo) => normalizePhotoRecord(photo));
-  const hasChanges = normalizedPhotos.some((photo, index) => {
-    const current = parsed[index] || {};
-    return photo.title !== current.title || photo.description !== current.description || photo.url !== current.url || photo.filename !== current.filename;
-  });
-
-  if (hasChanges) {
-    await writeAlbum(config, normalizedPhotos);
-  }
-
-  return normalizedPhotos;
-}
-
-async function writeAlbum(config, photos) {
-  await config.storage.writeAlbum(photos);
-}
-
 async function handleAdminLogin(req, res, config, sessions) {
   const body = await parseJsonBody(req, 8 * 1024);
   const password = typeof body.password === "string" ? body.password : "";
@@ -348,26 +306,12 @@ async function handlePhotoUpload(req, res, config, sessions) {
 
   const storedFileName = `${Date.now()}-${crypto.randomUUID()}${pickExtension(file.filename, file.contentType)}`;
   await config.storage.writeAsset(storedFileName, file);
-
-  const title = sanitizeInlineText(fields.title, 120) || titleFromFilename(file.filename);
-  const description = sanitizeDescriptionText(fields.description, 8000);
-  const createdAt = new Date().toISOString();
-
-  const photo = {
-    id: crypto.randomUUID(),
-    title,
-    description,
+  const photo = await config.database.createPhoto({
+    title: fields.title,
+    description: fields.description,
+    file,
     filename: storedFileName,
-    originalFilename: file.filename,
-    mimeType: file.contentType,
-    size: file.data.length,
-    createdAt,
-    url: buildPhotoUrl(storedFileName),
-  };
-
-  const photos = await readAlbum(config);
-  photos.unshift(photo);
-  await writeAlbum(config, photos);
+  });
 
   return sendJson(res, 201, { photo });
 }
@@ -381,15 +325,10 @@ async function handlePhotoDelete(req, res, config, sessions, photoId) {
     return sendJson(res, 400, { error: "Missing photo id." });
   }
 
-  const photos = await readAlbum(config);
-  const photoIndex = photos.findIndex((photo) => photo.id === photoId);
-
-  if (photoIndex === -1) {
+  const photo = await config.database.deletePhoto(photoId);
+  if (!photo) {
     return sendJson(res, 404, { error: "Photo not found." });
   }
-
-  const [photo] = photos.splice(photoIndex, 1);
-  await writeAlbum(config, photos);
 
   if (photo.filename) {
     await config.storage.deleteAsset(photo.filename);
@@ -415,24 +354,10 @@ async function handlePhotoUpdate(req, res, config, sessions, photoId) {
     return sendJson(res, 400, { error: "Add a title or description to update." });
   }
 
-  const photos = await readAlbum(config);
-  const photoIndex = photos.findIndex((photo) => photo.id === photoId);
-
-  if (photoIndex === -1) {
+  const updatedPhoto = await config.database.updatePhoto(photoId, body);
+  if (!updatedPhoto) {
     return sendJson(res, 404, { error: "Photo not found." });
   }
-
-  const currentPhoto = photos[photoIndex];
-  const nextTitle = hasTitle ? sanitizeInlineText(body.title, 120) : currentPhoto.title;
-  const nextDescription = hasDescription ? sanitizeDescriptionText(body.description, 8000) : currentPhoto.description;
-  const updatedPhoto = {
-    ...currentPhoto,
-    title: nextTitle || currentPhoto.title || "Untitled photo",
-    description: nextDescription,
-  };
-
-  photos[photoIndex] = updatedPhoto;
-  await writeAlbum(config, photos);
 
   return sendJson(res, 200, { photo: updatedPhoto });
 }
@@ -614,91 +539,6 @@ function pickExtension(filename, mimeType) {
   return EXTENSIONS_BY_TYPE[mimeType] || ".jpg";
 }
 
-function titleFromFilename(filename) {
-  const baseName = path.parse(filename).name || "Untitled photo";
-  const cleaned = baseName
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!cleaned) {
-    return "Untitled photo";
-  }
-
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-}
-
-function sanitizeInlineText(value, maxLength) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return repairMojibake(value).replace(/\s+/g, " ").trim().slice(0, maxLength);
-}
-
-function sanitizeDescriptionText(value, maxLength) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  let normalized = repairMojibake(value).replace(/\r\n?/g, "\n");
-
-  for (const { pattern, replacement } of DESCRIPTION_SECTION_REPLACEMENTS) {
-    normalized = normalized.replace(pattern, replacement);
-  }
-
-  normalized = normalized.replace(/\s+--no\s+/giu, "\n\nNegative prompt:\nno ");
-  normalized = normalized
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line !== ":")
-    .filter((line, index, lines) => line || (index > 0 && lines[index - 1] !== ""))
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  return normalized.slice(0, maxLength);
-}
-
-function repairMojibake(value) {
-  let normalized = String(value ?? "");
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (!MOJIBAKE_MARKER.test(normalized)) {
-      break;
-    }
-
-    const repaired = Buffer.from(normalized, "latin1").toString("utf8");
-    if (!repaired || repaired.includes("\uFFFD") || countMojibakeMarkers(repaired) >= countMojibakeMarkers(normalized)) {
-      break;
-    }
-
-    normalized = repaired;
-  }
-
-  return normalized;
-}
-
-function countMojibakeMarkers(value) {
-  const matches = String(value ?? "").match(/[\u00C3\u00C2\u00E2\u00F0][\u0080-\u017F]/gu);
-  return matches ? matches.length : 0;
-}
-
-function normalizePhotoRecord(photo) {
-  const source = photo && typeof photo === "object" ? photo : {};
-  const filename = normalizeStoredFilename(source.filename);
-  const title = sanitizeInlineText(source.title, 120) || "Untitled photo";
-  const description = sanitizeDescriptionText(source.description, 8000);
-
-  return {
-    ...source,
-    filename,
-    title,
-    description,
-    url: filename ? buildPhotoUrl(filename) : source.url || "",
-  };
-}
-
 async function serveUploadedAsset(res, config, relativePath) {
   const asset = await config.storage.readAsset(relativePath);
   if (!asset) {
@@ -775,19 +615,6 @@ function serveFile(res, filePath) {
 
 function getContentType(filePath) {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
-}
-
-function normalizeStoredFilename(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return value
-    .replace(/\\/g, "/")
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .join("/");
 }
 
 function sendJson(res, statusCode, payload) {
