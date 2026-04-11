@@ -1,15 +1,23 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
+  "builds": [
     {
-      "source": "/:path*",
-      "destination": "/api/vercel"
+      "src": "api/vercel.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": [
+          "public/**",
+          "server.js",
+          "storage.js",
+          "database.js"
+        ]
+      }
     }
   ],
-  "functions": {
-    "api/vercel.mjs": {
-      "includeFiles": "{public/**,server.js,storage.js,database.js}",
-      "maxDuration": 30
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/vercel.js?path=$1"
     }
-  }
+  ]
 }
