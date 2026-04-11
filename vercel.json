@@ -7,7 +7,7 @@
     }
   ],
   "functions": {
-    "api/vercel.js": {
+    "api/vercel.mjs": {
       "includeFiles": "{public/**,server.js,storage.js,database.js}",
       "maxDuration": 30
     }

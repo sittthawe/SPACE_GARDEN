@@ -1,3 +1,6 @@
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 const { createAlbumServer } = require("../server");
 
 const { server } = createAlbumServer({
@@ -5,10 +8,10 @@ const { server } = createAlbumServer({
   port: 0,
 });
 
-module.exports = (req, res) => {
+export default function handler(req, res) {
   req.url = reconstructOriginalUrl(req.url);
   return server.emit("request", req, res);
-};
+}
 
 function reconstructOriginalUrl(requestUrl) {
   const url = new URL(requestUrl || "/", "http://localhost");
