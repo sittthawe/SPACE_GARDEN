@@ -313,3 +313,67 @@ test("deployed environments bind to 0.0.0.0 when PORT is set", async (t) => {
   assert.equal(config.host, "0.0.0.0");
   await new Promise((resolve) => server.close(resolve));
 });
+
+test("admin session cookie remains valid across server restarts with the same configuration", async (t) => {
+  const storage = createMemoryStorage();
+
+  async function startTestServer() {
+    const { server } = createAlbumServer({
+      host: "127.0.0.1",
+      port: 0,
+      storage,
+      adminPassword: "secret-pass",
+    });
+
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return server;
+  }
+
+  let activeServer = await startTestServer();
+  let baseUrl = `http://127.0.0.1:${activeServer.address().port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => activeServer.close(resolve));
+  });
+
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password: "secret-pass" }),
+  });
+  assert.equal(loginResponse.status, 200);
+
+  const cookie = (loginResponse.headers.get("set-cookie") || "").split(";")[0];
+  assert.match(cookie, /^album_admin=/);
+
+  await new Promise((resolve) => activeServer.close(resolve));
+
+  activeServer = await startTestServer();
+  baseUrl = `http://127.0.0.1:${activeServer.address().port}`;
+
+  const sessionResponse = await fetch(`${baseUrl}/api/admin/session`, {
+    headers: {
+      Cookie: cookie,
+    },
+  });
+  assert.equal(sessionResponse.status, 200);
+
+  const sessionPayload = await sessionResponse.json();
+  assert.equal(sessionPayload.authenticated, true);
+
+  const form = new FormData();
+  form.set("title", "Restart-safe session");
+  form.set("description", "Signed cookies keep admin auth stable across instances");
+  form.set("photo", new Blob([Buffer.from([4, 2, 4, 2])], { type: "image/png" }), "restart-safe.png");
+
+  const uploadResponse = await fetch(`${baseUrl}/api/admin/photos`, {
+    method: "POST",
+    headers: {
+      Cookie: cookie,
+    },
+    body: form,
+  });
+  assert.equal(uploadResponse.status, 201);
+});

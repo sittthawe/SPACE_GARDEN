@@ -23,9 +23,11 @@ function createMemoryStorage() {
 
 test("Render defaults local storage into ./storage when STORAGE_DIR is not set", async (t) => {
   const previousRender = process.env.RENDER;
+  const previousVercel = process.env.VERCEL;
   const previousStorageDir = process.env.STORAGE_DIR;
 
   process.env.RENDER = "true";
+  delete process.env.VERCEL;
   delete process.env.STORAGE_DIR;
 
   t.after(() => {
@@ -33,6 +35,12 @@ test("Render defaults local storage into ./storage when STORAGE_DIR is not set",
       delete process.env.RENDER;
     } else {
       process.env.RENDER = previousRender;
+    }
+
+    if (previousVercel === undefined) {
+      delete process.env.VERCEL;
+    } else {
+      process.env.VERCEL = previousVercel;
     }
 
     if (previousStorageDir === undefined) {
@@ -50,6 +58,48 @@ test("Render defaults local storage into ./storage when STORAGE_DIR is not set",
   assert.equal(config.storageRoot, path.join(process.cwd(), "storage"));
   assert.equal(config.uploadsDir, path.join(process.cwd(), "storage", "uploads"));
   assert.equal(config.dataFile, path.join(process.cwd(), "storage", "data", "album.json"));
+
+  await new Promise((resolve) => server.close(resolve));
+});
+
+test("Vercel defaults local storage into the OS temp directory when STORAGE_DIR is not set", async (t) => {
+  const previousRender = process.env.RENDER;
+  const previousVercel = process.env.VERCEL;
+  const previousStorageDir = process.env.STORAGE_DIR;
+
+  delete process.env.RENDER;
+  process.env.VERCEL = "1";
+  delete process.env.STORAGE_DIR;
+
+  t.after(() => {
+    if (previousRender === undefined) {
+      delete process.env.RENDER;
+    } else {
+      process.env.RENDER = previousRender;
+    }
+
+    if (previousVercel === undefined) {
+      delete process.env.VERCEL;
+    } else {
+      process.env.VERCEL = previousVercel;
+    }
+
+    if (previousStorageDir === undefined) {
+      delete process.env.STORAGE_DIR;
+    } else {
+      process.env.STORAGE_DIR = previousStorageDir;
+    }
+  });
+
+  const { server, config } = createAlbumServer({
+    storage: createMemoryStorage(),
+    adminPassword: "secret-pass",
+  });
+
+  const expectedStorageRoot = path.join(os.tmpdir(), "spacegarden-storage");
+  assert.equal(config.storageRoot, expectedStorageRoot);
+  assert.equal(config.uploadsDir, path.join(expectedStorageRoot, "uploads"));
+  assert.equal(config.dataFile, path.join(expectedStorageRoot, "data", "album.json"));
 
   await new Promise((resolve) => server.close(resolve));
 });

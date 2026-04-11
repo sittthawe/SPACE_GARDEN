@@ -1,5 +1,6 @@
 ﻿const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { createPhotoDatabase } = require("./database");
@@ -9,6 +10,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const DEFAULT_ADMIN_PASSWORD = "RasDave26";
 const DEFAULT_RENDER_STORAGE_DIR = path.join(process.cwd(), "storage");
 const DEFAULT_RENDER_REPLICA_STORAGE_DIRS = ["/var/data"];
+const DEFAULT_VERCEL_STORAGE_DIR = path.join(os.tmpdir(), "spacegarden-storage");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -42,6 +44,7 @@ function buildConfig(overrides = {}) {
   const dataFile = overrides.dataFile || path.join(resolvedStorage.storageRoot, "data", "album.json");
   const replicaStorageRoots = resolvedStorage.replicaStorageRoots || [];
   const useImplicitLegacyFallback = !overrides.uploadsDir && !overrides.dataFile;
+  const adminPassword = overrides.adminPassword || process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
 
   return {
     host: overrides.host || defaultHost,
@@ -64,7 +67,8 @@ function buildConfig(overrides = {}) {
     r2: storageSettings.r2,
     maxUploadBytes: overrides.maxUploadBytes || 15 * 1024 * 1024,
     sessionTtlMs: overrides.sessionTtlMs || 8 * 60 * 60 * 1000,
-    adminPassword: overrides.adminPassword || process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD,
+    adminPassword,
+    sessionSecret: overrides.sessionSecret || process.env.SESSION_SECRET || adminPassword,
   };
 }
 
@@ -90,7 +94,7 @@ function startServer(overrides = {}) {
       if (config.replicaStorageRoots.length > 0) {
         console.log(`Additional local storage roots detected: ${config.replicaStorageRoots.join(", ")}`);
       }
-      if (String(process.env.RENDER || "").toLowerCase() === "true") {
+      if (isRenderEnvironment()) {
         if (config.storageRootSource === "explicit") {
           console.log(`Render persistence is using STORAGE_DIR=${config.storageRoot}.`);
         } else {
@@ -99,6 +103,10 @@ function startServer(overrides = {}) {
             `On Render, attach a persistent disk at ${durableRoots.join(" or ")} or set STORAGE_DIR to your disk path to keep uploads across deploys.`
           );
         }
+      } else if (isVercelEnvironment() && config.storageRootSource === "vercel-default") {
+        console.log(
+          `On Vercel, local storage is using the temporary directory ${config.storageRoot}. Configure R2 to keep uploads and album metadata across invocations and deploys.`
+        );
       }
     } else if (config.storageMode === "r2") {
       console.log("Using Cloudflare R2 for image and album storage.");
@@ -113,6 +121,7 @@ function startServer(overrides = {}) {
 function resolveStoragePaths(overrides = {}) {
   const legacyStorageRoot = path.resolve(overrides.legacyStorageDir || __dirname);
   const renderDefaultStorageRoot = path.resolve(overrides.renderDefaultStorageDir || DEFAULT_RENDER_STORAGE_DIR);
+  const vercelDefaultStorageRoot = path.resolve(overrides.vercelDefaultStorageDir || DEFAULT_VERCEL_STORAGE_DIR);
   const explicitStorageDir = overrides.storageDir || process.env.STORAGE_DIR;
 
   if (explicitStorageDir) {
@@ -124,12 +133,21 @@ function resolveStoragePaths(overrides = {}) {
     };
   }
 
-  if (String(process.env.RENDER || "").toLowerCase() === "true") {
+  if (isRenderEnvironment()) {
     return {
       storageRoot: renderDefaultStorageRoot,
       legacyStorageRoot,
       replicaStorageRoots: resolveRenderReplicaStorageRoots(overrides, renderDefaultStorageRoot, legacyStorageRoot),
       source: "render-default",
+    };
+  }
+
+  if (isVercelEnvironment()) {
+    return {
+      storageRoot: vercelDefaultStorageRoot,
+      legacyStorageRoot,
+      replicaStorageRoots: [],
+      source: "vercel-default",
     };
   }
 
@@ -139,6 +157,14 @@ function resolveStoragePaths(overrides = {}) {
     replicaStorageRoots: [],
     source: "legacy-default",
   };
+}
+
+function isRenderEnvironment() {
+  return String(process.env.RENDER || "").toLowerCase() === "true";
+}
+
+function isVercelEnvironment() {
+  return String(process.env.VERCEL || "") === "1";
 }
 
 function resolveRenderReplicaStorageRoots(overrides, storageRoot, legacyStorageRoot) {
@@ -188,29 +214,29 @@ async function handleRequest(req, res, config, sessions) {
     }
 
     if (req.method === "GET" && pathname === "/api/admin/session") {
-      return sendJson(res, 200, { authenticated: isAuthenticated(req, sessions) });
+      return sendJson(res, 200, { authenticated: isAuthenticated(req, config) });
     }
 
     if (req.method === "POST" && pathname === "/api/admin/login") {
-      return handleAdminLogin(req, res, config, sessions);
+      return handleAdminLogin(req, res, config);
     }
 
     if (req.method === "POST" && pathname === "/api/admin/logout") {
-      return handleAdminLogout(req, res, sessions);
+      return handleAdminLogout(req, res);
     }
 
     if (req.method === "POST" && pathname === "/api/admin/photos") {
-      return handlePhotoUpload(req, res, config, sessions);
+      return handlePhotoUpload(req, res, config);
     }
 
     if (req.method === "PATCH" && pathname.startsWith("/api/admin/photos/")) {
       const photoId = pathname.replace("/api/admin/photos/", "").trim();
-      return handlePhotoUpdate(req, res, config, sessions, photoId);
+      return handlePhotoUpdate(req, res, config, photoId);
     }
 
     if (req.method === "DELETE" && pathname.startsWith("/api/admin/photos/")) {
       const photoId = pathname.replace("/api/admin/photos/", "").trim();
-      return handlePhotoDelete(req, res, config, sessions, photoId);
+      return handlePhotoDelete(req, res, config, photoId);
     }
 
     if (req.method === "GET" && pathname === "/") {
@@ -254,7 +280,7 @@ function applySecurityHeaders(res) {
   );
 }
 
-async function handleAdminLogin(req, res, config, sessions) {
+async function handleAdminLogin(req, res, config) {
   const body = await parseJsonBody(req, 8 * 1024);
   const password = typeof body.password === "string" ? body.password : "";
 
@@ -262,28 +288,17 @@ async function handleAdminLogin(req, res, config, sessions) {
     return sendJson(res, 401, { error: "Invalid admin password." });
   }
 
-  const token = crypto.randomUUID();
-  sessions.set(token, {
-    expiresAt: Date.now() + config.sessionTtlMs,
-  });
-
-  res.setHeader("Set-Cookie", buildSessionCookie(token, config.sessionTtlMs));
+  res.setHeader("Set-Cookie", buildSessionCookie(createSessionToken(config), config.sessionTtlMs));
   return sendJson(res, 200, { authenticated: true });
 }
 
-async function handleAdminLogout(req, res, sessions) {
-  const cookies = parseCookies(req);
-  const token = cookies.album_admin;
-  if (token) {
-    sessions.delete(token);
-  }
-
+async function handleAdminLogout(req, res) {
   res.setHeader("Set-Cookie", clearSessionCookie());
   return sendJson(res, 200, { authenticated: false });
 }
 
-async function handlePhotoUpload(req, res, config, sessions) {
-  if (!isAuthenticated(req, sessions)) {
+async function handlePhotoUpload(req, res, config) {
+  if (!isAuthenticated(req, config)) {
     return sendJson(res, 401, { error: "Admin login required." });
   }
 
@@ -316,8 +331,8 @@ async function handlePhotoUpload(req, res, config, sessions) {
   return sendJson(res, 201, { photo });
 }
 
-async function handlePhotoDelete(req, res, config, sessions, photoId) {
-  if (!isAuthenticated(req, sessions)) {
+async function handlePhotoDelete(req, res, config, photoId) {
+  if (!isAuthenticated(req, config)) {
     return sendJson(res, 401, { error: "Admin login required." });
   }
 
@@ -337,8 +352,8 @@ async function handlePhotoDelete(req, res, config, sessions, photoId) {
   return sendJson(res, 200, { deletedId: photo.id });
 }
 
-async function handlePhotoUpdate(req, res, config, sessions, photoId) {
-  if (!isAuthenticated(req, sessions)) {
+async function handlePhotoUpdate(req, res, config, photoId) {
+  if (!isAuthenticated(req, config)) {
     return sendJson(res, 401, { error: "Admin login required." });
   }
 
@@ -380,31 +395,98 @@ function parseCookies(req) {
     }, {});
 }
 
-function isAuthenticated(req, sessions) {
+function isAuthenticated(req, config) {
   const token = parseCookies(req).album_admin;
   if (!token) {
     return false;
   }
 
-  const session = sessions.get(token);
-  if (!session) {
-    return false;
-  }
-
-  if (session.expiresAt < Date.now()) {
-    sessions.delete(token);
-    return false;
-  }
-
-  return true;
+  return Boolean(readSessionToken(token, config));
 }
 
 function buildSessionCookie(token, maxAgeMs) {
-  return `album_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(maxAgeMs / 1000)}`;
+  const segments = [
+    `album_admin=${encodeURIComponent(token)}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    "Path=/",
+    `Max-Age=${Math.floor(maxAgeMs / 1000)}`,
+  ];
+
+  if (shouldUseSecureCookies()) {
+    segments.push("Secure");
+  }
+
+  return segments.join("; ");
 }
 
 function clearSessionCookie() {
-  return "album_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
+  const segments = ["album_admin=", "HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=0"];
+
+  if (shouldUseSecureCookies()) {
+    segments.push("Secure");
+  }
+
+  return segments.join("; ");
+}
+
+function shouldUseSecureCookies() {
+  return isVercelEnvironment() || String(process.env.NODE_ENV || "").toLowerCase() === "production";
+}
+
+function createSessionToken(config) {
+  const payload = Buffer.from(
+    JSON.stringify({
+      exp: Date.now() + config.sessionTtlMs,
+    }),
+    "utf8"
+  ).toString("base64url");
+
+  return `${payload}.${signSessionPayload(payload, config.sessionSecret)}`;
+}
+
+function readSessionToken(token, config) {
+  if (typeof token !== "string") {
+    return null;
+  }
+
+  const separatorIndex = token.indexOf(".");
+  if (separatorIndex <= 0 || separatorIndex === token.length - 1) {
+    return null;
+  }
+
+  const payload = token.slice(0, separatorIndex);
+  const signature = token.slice(separatorIndex + 1);
+  const expectedSignature = signSessionPayload(payload, config.sessionSecret);
+  if (!safeTokenEquals(signature, expectedSignature)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed.exp !== "number" || parsed.exp < Date.now()) {
+      return null;
+    }
+
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function signSessionPayload(payload, secret) {
+  return crypto.createHmac("sha256", String(secret || DEFAULT_ADMIN_PASSWORD)).update(payload).digest("base64url");
+}
+
+function safeTokenEquals(left, right) {
+  const leftBuffer = Buffer.from(String(left || ""), "utf8");
+  const rightBuffer = Buffer.from(String(right || ""), "utf8");
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 async function parseJsonBody(req, maxBytes) {

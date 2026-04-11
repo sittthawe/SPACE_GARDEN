@@ -84,7 +84,41 @@ npm test
 
 ## Deploy
 
-This app is ready to run on a Node host such as Render.
+This app is ready to run on a Node host such as Render, and it also includes a `vercel.json` plus a Vercel function entrypoint for Vercel deployments.
+
+### Vercel
+
+The Vercel deploy uses one Node function to serve:
+
+- `/`
+- `/admin`
+- `/api/*`
+- `/uploads/*`
+- the assets inside `public/`
+
+Important notes for Vercel:
+
+- Vercel does not provide durable local disk for serverless functions
+- if you deploy without R2 configured, the app falls back to a temporary storage directory so it can boot, but uploads and album data are ephemeral
+- for a real deployment, set the R2 environment variables so images and album metadata persist
+- admin auth uses a signed cookie, so login stays valid across Vercel function instances
+
+Recommended Vercel environment variables:
+
+```bash
+ADMIN_PASSWORD=your-password
+SESSION_SECRET=your-long-random-secret
+R2_ACCOUNT_ID=your-cloudflare-account-id
+R2_BUCKET=your-r2-bucket-name
+R2_ACCESS_KEY_ID=your-r2-access-key
+R2_SECRET_ACCESS_KEY=your-r2-secret-key
+R2_ALBUM_KEY=album.json
+R2_UPLOAD_PREFIX=uploads
+```
+
+### Render
+
+This app is also ready to run on Render or another long-lived Node host.
 
 Recommended environment variables for an R2-backed deploy:
 
